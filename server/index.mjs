@@ -1017,10 +1017,9 @@ async function recoverStaleRenderingProjects() {
   const busy = new Set(["queued", "fetching", "transcribing", "analyzing", "rendering", "scheduling"]);
   let changed = false;
   for (const [id, project] of Object.entries(projects)) {
-    const bufferOnlyFailure = String(project?.status || "") === "failed"
-      && (project?.clips || []).length
-      && /\bBuffer scheduling failed\b|Buffer request failed/i.test(String(project?.error || ""));
-    if (!busy.has(String(project?.status || "")) && !bufferOnlyFailure) continue;
+    const hasRenderedClips = (project?.clips || []).some((c) => c.filePath || c.githubMediaUrl || c.downloadUrl);
+    const recoverable = String(project?.status || "") === "failed" && hasRenderedClips;
+    if (!busy.has(String(project?.status || "")) && !recoverable) continue;
     projects[id] = {
       ...project,
       status: "ready",

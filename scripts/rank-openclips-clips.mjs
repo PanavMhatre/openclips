@@ -62,8 +62,12 @@ function clipHasMedia(clip) {
 }
 
 function clipHasLocalFile(clip) {
-  // filePath is stripped from public API; check downloadUrl mapping instead
-  return clipHasMedia(clip);
+  return Boolean(
+    clip.githubMediaUrl ||
+    clip.discordMediaUrl ||
+    clip.cloudMediaUrl ||
+    clip.downloadUrl,  // accept server-relative paths — upload will happen at scheduling time
+  );
 }
 
 function scoreClip(clip, alreadyScheduledIds) {
@@ -99,7 +103,7 @@ async function loadProjects() {
 function collectCandidates(projects) {
   const candidates = [];
   for (const project of projects) {
-    if (project.status !== "ready") continue;
+    if (!project.clips?.length) continue;  // was: if (project.status !== "ready") continue;
     for (const clip of project.clips || []) {
       candidates.push({ project, clip });
     }
@@ -169,6 +173,9 @@ async function main() {
       cloudMediaUrl: item.clip.cloudMediaUrl,
       thumbnailUrl: item.clip.thumbnailUrl,
       lastBufferScheduleAt: item.clip.lastBufferScheduleAt || null,
+      localFilePath: item.clip.downloadUrl
+        ? path.resolve(__dirname, "../data/clips", path.basename(item.clip.downloadUrl))
+        : null,
     }));
     console.log(JSON.stringify(output, null, 2));
   } else {

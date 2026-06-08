@@ -148,6 +148,50 @@ async function bufferGraphql(query) {
   return payload.data || {};
 }
 
+let _orgId = "";
+async function getOrgId() {
+  if (_orgId) return _orgId;
+  const data = await bufferGraphql(`query { account { organizations { id } } }`);
+  _orgId = data?.account?.organizations?.[0]?.id || "";
+  if (!_orgId) throw new Error("Could not fetch Buffer organization ID");
+  return _orgId;
+}
+
+async function uploadLocalClipToGitHub(localFilePath) {
+  const githubToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_STORAGE_TOKEN || "";
+  if (!githubToken) throw new Error("No GitHub token available for clip upload (set GITHUB_TOKEN)");
+  const repo = process.env.GITHUB_STORAGE_REPO || "panavmhatre/openclips";
+  const branch = process.env.GITHUB_STORAGE_BRANCH || "main";
+  const dir = process.env.GITHUB_STORAGE_DIR || "clips";
+  const fileName = path.basename(localFilePath);
+  const remotePath = `${dir}/${fileName}`;
+  const apiUrl = `https://api.github.com/repos/${repo}/contents/${remotePath}`;
+
+  // Check for existing SHA
+  let sha;
+  const check = await fetch(`${apiUrl}?ref=${branch}`, {
+    headers: { Authorization: `Bearer ${githubToken}`, "User-Agent": "openclips" },
+  });
+  if (check.ok) {
+    const existing = await check.json();
+    sha = existing.sha;
+  }
+
+  const { readFile } = await import("node:fs/promises");
+  const content = (await readFile(localFilePath)).toString("base64");
+  const body = { message: `upload clip ${fileName}`, content, branch };
+  if (sha) body.sha = sha;
+
+  const res = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${githubToken}`, "Content-Type": "application/json", "User-Agent": "openclips" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`GitHub upload failed ${res.status}: ${data.message}`);
+  return `https://raw.githubusercontent.com/${repo}/${branch}/${remotePath}`;
+}
+
 function gqlStr(value) {
   return JSON.stringify(String(value || ""));
 }
@@ -183,7 +227,8 @@ const channelServiceCache = new Map();
 
 async function getChannelService(channelId) {
   if (channelServiceCache.has(channelId)) return channelServiceCache.get(channelId);
-  const data = await bufferGraphql(`query { channels(input:{}) { id service } }`);
+  const id = await getOrgId();
+  const data = await bufferGraphql(`query { channels(input:{ organizationId: ${JSON.stringify(id)} }) { id service } }`);
   for (const ch of data?.channels || []) channelServiceCache.set(ch.id, ch.service);
   return channelServiceCache.get(channelId) || "unknown";
 }
@@ -267,13 +312,22 @@ async function main() {
 
   const top5 = clips.slice(0, 5);
 
-  // Validate all clips have media URLs before live scheduling
+  // Validate all clips have media URLs before live scheduling; upload local files if needed
   const missingMedia = top5.filter((clip) => !resolvePublicUrl(clip));
   if (missingMedia.length && !DRY_RUN) {
-    console.error(`\n${missingMedia.length} clip(s) are missing public media URLs:`);
-    missingMedia.forEach((c) => console.error(`  - ${c.title || c.clipId}`));
-    console.error("\nSet BUFFER_PUBLIC_CLIP_BASE_URL or upload clips to GitHub/Discord first.");
-    process.exit(1);
+    console.log(`\nUploading ${missingMedia.length} clip(s) to GitHub storage...`);
+    for (const clip of missingMedia) {
+      const localFilePath = clip.localFilePath || (clip.downloadUrl
+        ? path.resolve(__dirname, "../data/clips", path.basename(clip.downloadUrl))
+        : null);
+      if (!localFilePath || !existsSync(localFilePath)) {
+        console.error(`  [error] ${clip.title}: no local file found at ${localFilePath || "(unknown)"}`);
+        process.exit(1);
+      }
+      console.log(`  Uploading ${path.basename(localFilePath)} ...`);
+      clip.githubMediaUrl = await uploadLocalClipToGitHub(localFilePath);
+      console.log(`  → ${clip.githubMediaUrl}`);
+    }
   }
 
   const plan = top5.map((clip, i) => ({
