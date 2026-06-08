@@ -1,5 +1,25 @@
 # OpenClips Workflow Reference
 
+## Cloud Environment Setup (required on remote/CI IPs)
+
+YouTube blocks video downloads from cloud IPs without authenticated cookies.
+Export your YouTube/Google cookies from a browser using the
+**"Get cookies.txt LOCALLY"** extension (Chrome or Firefox), save the file,
+then set in `.env`:
+
+```
+YT_DLP_COOKIES_FILE=/path/to/youtube-cookies.txt
+```
+
+The yt-dlp config at `~/.config/yt-dlp/config` should also contain:
+
+```
+--no-check-certificates
+```
+
+Channel-page listing (`scripts/latest-youtube-search.mjs`) works without
+cookies. Only video download (OpenClips `/api/projects` submission) requires them.
+
 ## Server
 
 Start the dev server from the workspace root:

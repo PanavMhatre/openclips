@@ -56,6 +56,11 @@ const FACE_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_FACE_TRACK
 const BALL_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_BALL_TRACKER_SAMPLES || 12));
 const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 12));
 const KEEP_FULL_SOURCE = /^(1|true|yes)$/i.test(String(process.env.OPENCLIPS_KEEP_FULL_SOURCE || ""));
+const YT_DLP_COOKIES_FILE = String(process.env.YT_DLP_COOKIES_FILE || "").trim();
+
+function ytDlpBaseArgs() {
+  return YT_DLP_COOKIES_FILE ? ["--cookies", YT_DLP_COOKIES_FILE] : [];
+}
 const BACKGROUND_MUSIC_ENABLED = !/^(0|false|no)$/i.test(String(process.env.OPENCLIPS_BACKGROUND_MUSIC || "true"));
 const BACKGROUND_MUSIC_VOLUME = Math.max(
   0.01,
@@ -2497,6 +2502,7 @@ async function downloadVideo(sourceUrl, projectId) {
   let description = "";
   try {
     const metadata = await runCommand("yt-dlp", [
+      ...ytDlpBaseArgs(),
       "--no-playlist",
       "--skip-download",
       "--dump-single-json",
@@ -2511,6 +2517,7 @@ async function downloadVideo(sourceUrl, projectId) {
     title = "";
   }
   await runCommand("yt-dlp", [
+    ...ytDlpBaseArgs(),
     "--no-playlist",
     "--force-overwrites",
     "-f",
@@ -2571,6 +2578,7 @@ async function fetchSourceCaptions(sourceUrl, projectId, duration) {
   const template = path.join(CAPTION_DIR, `${projectId}.%(ext)s`);
   try {
     await runCommand("yt-dlp", [
+      ...ytDlpBaseArgs(),
       "--no-playlist",
       "--skip-download",
       "--write-auto-subs",

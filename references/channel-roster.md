@@ -3,50 +3,49 @@
 Source YouTube channels for the OpenClips Buffer publishing workflow.
 Add or remove rows to control which channels are scraped by `scripts/latest-youtube-search.mjs`.
 
-Each row is: `| Channel Display Name | yt-dlp Search Term | Category |`
-The search term is passed directly to `yt-dlp` as `ytsearch1:<term>`.
+Each row is: `| Channel Display Name | @handle | Category |`
+The handle (`@username`) is used to scrape the channel's `/videos` page directly via yt-dlp.
+This works reliably on cloud IPs without bot-check issues (unlike ytsearch).
 
 ## Tech & AI
 
-| Channel Name | Search Term | Category |
+| Channel Name | @handle | Category |
 |---|---|---|
-| Lex Fridman | Lex Fridman podcast | Tech/AI |
-| Y Combinator | Y Combinator | Tech/AI |
-| a16z | a16z podcast | Tech/AI |
-| Andreessen Horowitz | Andreessen Horowitz | Tech/AI |
-| Sequoia Capital | Sequoia Capital | Tech/AI |
-| NVIDIA AI | NVIDIA AI podcast | Tech/AI |
-| Google DeepMind | Google DeepMind | Tech/AI |
-| OpenAI | OpenAI | Tech/AI |
-| Anthropic | Anthropic AI | Tech/AI |
-| Two Minute Papers | Two Minute Papers | Tech/AI |
-| AI Explained | AI Explained | Tech/AI |
-| Matt Wolfe | Matt Wolfe AI | Tech/AI |
-| Fireship | Fireship | Tech |
-| Theo - t3.gg | Theo t3.gg | Tech |
-| ThePrimeagen | ThePrimeagen | Tech |
+| Lex Fridman | @lexfridman | Tech/AI |
+| Y Combinator | @ycombinator | Tech/AI |
+| a16z | @a16z | Tech/AI |
+| Sequoia Capital | @sequoiacapital | Tech/AI |
+| NVIDIA AI | @nvidia | Tech/AI |
+| Google DeepMind | @googledeepmind | Tech/AI |
+| OpenAI | @OpenAI | Tech/AI |
+| Anthropic | @anthropic-ai | Tech/AI |
+| Matt Wolfe | @mreflow | Tech/AI |
+| Fireship | @Fireship | Tech |
+| Theo - t3.gg | @t3dotgg | Tech |
+| ThePrimeagen | @ThePrimeagen | Tech |
 
 ## Finance & Business
 
-| Channel Name | Search Term | Category |
+| Channel Name | @handle | Category |
 |---|---|---|
-| All-In Podcast | All-In Podcast | Finance/Business |
-| My First Million | My First Million podcast | Finance/Business |
-| The Knowledge Project | Farnam Street Knowledge Project podcast | Finance/Business |
-| Invest Like the Best | Invest Like the Best podcast | Finance/Business |
-| Acquired | Acquired podcast | Finance/Business |
-| The Tim Ferriss Show | Tim Ferriss Show podcast | Finance/Business |
-| Diary of a CEO | Diary of a CEO | Finance/Business |
-| Patrick Bet-David | Patrick Bet-David podcast | Finance/Business |
-| Alex Hormozi | Alex Hormozi | Finance/Business |
-| Codie Sanchez | Codie Sanchez | Finance/Business |
-| Graham Stephan | Graham Stephan | Finance |
-| Andrei Jikh | Andrei Jikh | Finance |
-| Meet Kevin | Meet Kevin | Finance |
+| All-In Podcast | @allinpodcast | Finance/Business |
+| My First Million | @MyFirstMillionPod | Finance/Business |
+| The Knowledge Project | @ShaneAParrish | Finance/Business |
+| Invest Like the Best | @investlikethebest | Finance/Business |
+| Acquired | @acquiredpod | Finance/Business |
+| The Tim Ferriss Show | @timferriss | Finance/Business |
+| Diary of a CEO | @TheDiaryOfACEO | Finance/Business |
+| Patrick Bet-David | @patrickbetdavid | Finance/Business |
+| Alex Hormozi | @AlexHormozi | Finance/Business |
+| Codie Sanchez | @codiesanchez | Finance/Business |
+| Graham Stephan | @GrahamStephan | Finance |
+| Andrei Jikh | @andreijikh | Finance |
+| Meet Kevin | @MeetKevin | Finance |
 
 ## Notes
 
-- The search term is used for `yt-dlp` `ytsearch` — use the channel's name as it appears in YouTube search for best results.
-- Videos shorter than 5 minutes are skipped (yt-dlp `--match-filter "duration > 300"`).
-- Results are limited to videos published within the last 60 days.
-- To override the per-channel limit run: `node scripts/latest-youtube-search.mjs --limit 2`
+- Each `@handle` is scraped from `https://www.youtube.com/@handle/videos` — the channel's public /videos tab.
+- Videos shorter than 5 minutes are skipped (`yt-dlp --match-filter "duration > 300"`).
+- `--playlist-end 4` fetches the 4 most recent uploads per channel and picks the first one over 5 min.
+- To fetch more per channel: `node scripts/latest-youtube-search.mjs --limit 2`
+- If a handle changes, update this file — yt-dlp will return an error for invalid handles.
