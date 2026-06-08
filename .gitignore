@@ -1,0 +1,14 @@
+node_modules
+dist
+data
+.env
+.env.local
+.DS_Store
+npm-debug.log*
+.playwright-mcp/
+__pycache__/
+*.pyc
+*.png
+*.jpg
+*.jpeg
+*.onnx
