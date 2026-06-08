@@ -2488,6 +2488,11 @@ async function canRunFaceDetection() {
   }
 }
 
+function ytDlpCookieArgs() {
+  const f = process.env.YT_COOKIES_FILE;
+  return f ? ["--cookies", f] : [];
+}
+
 async function downloadVideo(sourceUrl, projectId) {
   if (!sourceUrl) throw new Error("No source URL provided.");
   const template = path.join(UPLOAD_DIR, `${projectId}-source.%(ext)s`);
@@ -2497,6 +2502,7 @@ async function downloadVideo(sourceUrl, projectId) {
   let description = "";
   try {
     const metadata = await runCommand("yt-dlp", [
+      ...ytDlpCookieArgs(),
       "--no-playlist",
       "--skip-download",
       "--dump-single-json",
@@ -2511,6 +2517,7 @@ async function downloadVideo(sourceUrl, projectId) {
     title = "";
   }
   await runCommand("yt-dlp", [
+    ...ytDlpCookieArgs(),
     "--no-playlist",
     "--force-overwrites",
     "-f",
@@ -2571,6 +2578,7 @@ async function fetchSourceCaptions(sourceUrl, projectId, duration) {
   const template = path.join(CAPTION_DIR, `${projectId}.%(ext)s`);
   try {
     await runCommand("yt-dlp", [
+      ...ytDlpCookieArgs(),
       "--no-playlist",
       "--skip-download",
       "--write-auto-subs",
