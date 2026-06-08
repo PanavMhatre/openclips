@@ -7,40 +7,44 @@ Each row is: `| Channel Display Name | @handle | Category |`
 The handle (`@username`) is used to scrape the channel's `/videos` page directly via yt-dlp.
 This works reliably on cloud IPs without bot-check issues (unlike ytsearch).
 
-## Tech & AI
+## Posting Mix
+
+| Weight | Sources |
+|--------|---------|
+| 40% | My First Million, Alex Hormozi, Codie Sanchez |
+| 35% | Y Combinator, a16z, Acquired, All-In Podcast |
+| 25% | Lex Fridman, Diary of a CEO, Tim Ferriss, The Knowledge Project, Invest Like the Best |
+
+---
+
+## Tier 1 — High Frequency (40%)
+
+| Channel Name | @handle | Category |
+|---|---|---|
+| My First Million | @MyFirstMillionPod | Business/Ideas |
+| Alex Hormozi | @AlexHormozi | Business |
+| Codie Sanchez | @codiesanchez | Business |
+
+## Tier 2 — VC & Startup (35%)
+
+| Channel Name | @handle | Category |
+|---|---|---|
+| Y Combinator | @ycombinator | Tech/VC |
+| a16z | @a16z | Tech/VC |
+| Acquired | @AcquiredFM | Business/VC |
+| All-In Podcast | @allinpodcast | Tech/Finance |
+
+## Tier 3 — Long-form Podcast (25%)
 
 | Channel Name | @handle | Category |
 |---|---|---|
 | Lex Fridman | @lexfridman | Tech/AI |
-| Y Combinator | @ycombinator | Tech/AI |
-| a16z | @a16z | Tech/AI |
-| Sequoia Capital | @sequoiacapital | Tech/AI |
-| NVIDIA AI | @nvidia | Tech/AI |
-| Google DeepMind | @googledeepmind | Tech/AI |
-| OpenAI | @OpenAI | Tech/AI |
-| Anthropic | @anthropic-ai | Tech/AI |
-| Matt Wolfe | @mreflow | Tech/AI |
-| Fireship | @Fireship | Tech |
-| Theo - t3.gg | @t3dotgg | Tech |
-| ThePrimeagen | @ThePrimeagen | Tech |
+| The Diary of a CEO | @TheDiaryOfACEO | Business |
+| Tim Ferriss | @timferriss | Business/Life |
+| The Knowledge Project | @ShaneAParrish | Business/Thinking |
+| Invest Like the Best | @InvestLiketheBest | Finance/Investing |
 
-## Finance & Business
-
-| Channel Name | @handle | Category |
-|---|---|---|
-| All-In Podcast | @allinpodcast | Finance/Business |
-| My First Million | @MyFirstMillionPod | Finance/Business |
-| The Knowledge Project | @ShaneAParrish | Finance/Business |
-| Invest Like the Best | @investlikethebest | Finance/Business |
-| Acquired | @acquiredpod | Finance/Business |
-| The Tim Ferriss Show | @timferriss | Finance/Business |
-| Diary of a CEO | @TheDiaryOfACEO | Finance/Business |
-| Patrick Bet-David | @patrickbetdavid | Finance/Business |
-| Alex Hormozi | @AlexHormozi | Finance/Business |
-| Codie Sanchez | @codiesanchez | Finance/Business |
-| Graham Stephan | @GrahamStephan | Finance |
-| Andrei Jikh | @andreijikh | Finance |
-| Meet Kevin | @MeetKevin | Finance |
+---
 
 ## Notes
 
@@ -48,4 +52,11 @@ This works reliably on cloud IPs without bot-check issues (unlike ytsearch).
 - Videos shorter than 5 minutes are skipped (`yt-dlp --match-filter "duration > 300"`).
 - `--playlist-end 4` fetches the 4 most recent uploads per channel and picks the first one over 5 min.
 - To fetch more per channel: `node scripts/latest-youtube-search.mjs --limit 2`
-- If a handle changes, update this file — yt-dlp will return an error for invalid handles.
+- If a handle returns a 404, yt-dlp will log an error — update the handle and retry.
+- `@AcquiredFM` and `@InvestLiketheBest` updated from previous broken handles.
+
+## Benched
+
+Not used for this channel — keep for AI-news or testing:
+Graham Stephan, Meet Kevin, Andrei Jikh, Patrick Bet-David, NVIDIA AI, Google DeepMind,
+OpenAI, Anthropic, Fireship, Theo (t3.gg), ThePrimeagen, Sequoia Capital, Matt Wolfe.

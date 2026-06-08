@@ -56,7 +56,7 @@ async function parseRoster(rosterPath) {
     const cells = trimmed.split("|").map((c) => c.trim()).filter(Boolean);
     if (cells.length < 2) continue;
     const [name, handle, category] = cells;
-    if (name && handle) {
+    if (name && handle?.startsWith("@")) {
       channels.push({ name, handle, category: category || "General" });
     }
   }
