@@ -35,19 +35,21 @@ function getFlag(name) {
 }
 const BASE_URL = (getFlag("--base-url") || process.env.OPENCLIPS_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const JSON_OUTPUT = args.includes("--json");
-const TOP_N = Math.max(1, Number(getFlag("--top")) || 5);
+const TOP_N = Math.max(1, Number(getFlag("--top")) || 6);
 
 // Words/patterns that indicate a weak hook
 const WEAK_HOOK_PATTERNS = [
   /^\d[\d,.\s%$BMK]*$/,                     // pure number / stat
   /^(intro|outro|recap|highlight|update|news|summary|topic|discussion|segment|clip|moment|part \d+)$/i,
   /^(the |a |an )?(big|key|main|important|major|top|best|new|latest) \w{1,10}$/i,
+  /^(this|that|it|they|we|you) (is|are|was|were|do|did|have|has) /i, // vague pronoun openers
+  /^(what|how|why|when|where) (is|are|was|were) [^A-Z]/i,            // generic question starters
 ];
 
 function isWeakHook(hook) {
   if (!hook || typeof hook !== "string") return true;
   const words = hook.trim().split(/\s+/).filter(Boolean);
-  if (words.length < 4) return true;
+  if (words.length < 5) return true;  // raised from 4 — short hooks lack specificity
   const lower = hook.toLowerCase().trim();
   return WEAK_HOOK_PATTERNS.some((p) => p.test(lower));
 }
@@ -70,14 +72,23 @@ function clipHasLocalFile(clip) {
   );
 }
 
+// Minimum raw Groq score to even be considered — below this the clip lacks substance
+const MIN_RAW_SCORE = 70;
+
 function scoreClip(clip, alreadyScheduledIds) {
-  let score = Number(clip.score) || 0;
+  const rawScore = Number(clip.score) || 0;
+
+  // Hard disqualify low-scoring clips before any adjustments
+  if (rawScore < MIN_RAW_SCORE) return -999;
+
+  let score = rawScore;
 
   if (isWeakHook(clip.hook)) score -= 30;
-  if (!clip.focus || clip.focus.trim().length < 20) score -= 15;
+  if (!clip.focus || clip.focus.trim().length < 30) score -= 20;  // raised threshold + penalty
   if (!clipHasLocalFile(clip)) score -= 40;
-  if (alreadyScheduledIds.has(clip.id)) score -= 20;
-  if (clip.duration && clip.duration >= 25 && clip.duration <= 55) score += 8;
+  if (alreadyScheduledIds.has(clip.id)) score -= 25;  // stronger recency penalty
+  if (clip.duration && clip.duration >= 28 && clip.duration <= 60) score += 10;  // sweet spot for short-form
+  else if (clip.duration && clip.duration < 20) score -= 15;  // too short to deliver substance
 
   return score;
 }
@@ -152,6 +163,7 @@ async function main() {
       ...item,
       adjustedScore: scoreClip(item.clip, alreadyScheduledIds),
     }))
+    .filter((item) => item.adjustedScore > -999)   // drop hard-disqualified clips
     .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .slice(0, TOP_N);
 

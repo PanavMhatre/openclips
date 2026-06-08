@@ -55,8 +55,8 @@ const PUBLIC_BASE_URL = (process.env.BUFFER_PUBLIC_CLIP_BASE_URL || process.env.
 const LEDGER_PATH = process.env.OPENCLIPS_BUFFER_LEDGER ||
   path.join(homedir(), ".codex", "openclips-buffer-publisher-ledger.json");
 
-// Schedule: 9:00 AM CST + 90 min intervals
-const SLOT_TIMES_CST = ["09:00", "10:30", "12:00", "13:30", "15:00"];
+// Schedule: 9:00 AM CST + 90 min intervals, 6 slots per day
+const SLOT_TIMES_CST = ["09:00", "10:30", "12:00", "13:30", "15:00", "16:30"];
 const TZ = "America/Chicago";
 
 // ─── Ledger ──────────────────────────────────────────────────────────────────
@@ -310,10 +310,10 @@ async function main() {
     process.exit(1);
   }
 
-  const top5 = clips.slice(0, 5);
+  const top6 = clips.slice(0, 6);
 
   // Validate all clips have media URLs before live scheduling; upload local files if needed
-  const missingMedia = top5.filter((clip) => !resolvePublicUrl(clip));
+  const missingMedia = top6.filter((clip) => !resolvePublicUrl(clip));
   if (missingMedia.length && !DRY_RUN) {
     console.log(`\nUploading ${missingMedia.length} clip(s) to GitHub storage...`);
     for (const clip of missingMedia) {
@@ -330,7 +330,7 @@ async function main() {
     }
   }
 
-  const plan = top5.map((clip, i) => ({
+  const plan = top6.map((clip, i) => ({
     clip,
     slot: i,
     time: SLOT_TIMES_CST[i],
