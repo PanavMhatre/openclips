@@ -9,27 +9,26 @@ Source channels for OpenClips podcast clip discovery. Each row provides the YouT
 | Lex Fridman Podcast | @lexfridman | Tech / AI |
 | Y Combinator | @ycombinator | Tech / Startups |
 | a16z | @a16z | Tech / VC |
-| Sequoia Capital | @sequoiacap | Tech / VC |
-| Greylock | @greylock | Tech / VC |
-| Lightcone Podcast | @lightconepodcast | Tech / Startups |
-| Cognitive Revolution | @cognitiverevolution | AI |
-| Dwarkesh Podcast | @dwarkesh_sp | Tech / AI |
+| Sequoia Capital | @sequoiacapital | Tech / VC |
+| Greylock | @greylockvc | Tech / VC |
+| Cognitive Revolution | @cognitiverevolutionpodcast | AI |
+| Dwarkesh Podcast | @dwarkeshpatel | Tech / AI |
 | BG2 Pod | @bg2pod | Tech / AI |
 
 ## Finance & Business
 
 | Search Name | YouTube Handle / URL | Category |
 |---|---|---|
-| All-In Podcast | @theallinpodcast | Tech / Finance |
+| All-In Podcast | @allin | Tech / Finance |
 | My First Million | @myfirstmillion | Business |
-| Acquired Podcast | @acquiredpodcast | Business |
+| Acquired Podcast | @acquiredfm | Business |
 | 20VC | @20vc | VC / Startups |
-| Invest Like the Best | @investlikethebest | Finance |
-| Patrick Boyle | @patrickboylefinance | Finance |
-| Founders Podcast | @founderspodcast | Business |
-| How I Built This | @howibuiltthis | Business |
+| Invest Like the Best | @iltb_podcast | Finance |
+| Patrick Boyle | @pboyle | Finance |
+| Founders Podcast | @founderspodcast1 | Business |
+| How I Built This | @guy_raz | Business |
 | Starter Story | @starterstory | Business |
-| The Knowledge Project | @theknowledgeproject | Mental Models |
+| The Knowledge Project | @tkppodcast | Mental Models |
 
 ## Format
 
