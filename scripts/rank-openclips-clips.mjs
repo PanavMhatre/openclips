@@ -30,6 +30,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,12 +38,15 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const DATA_CLIPS_DIR = path.join(ROOT_DIR, "data", "clips");
 const DEFAULT_META_PATH = path.join(ROOT_DIR, "data", "projects.json");
 
+const DEFAULT_LEDGER_PATH = path.join(homedir(), ".codex", "openclips-buffer-publisher-ledger.json");
+
 function parseArgs(argv) {
   const args = {
     baseUrl: process.env.OPENCLIPS_URL || "http://localhost:3000",
     top: 5,
     output: null,
     projectId: null,
+    ledgerPath: process.env.OPENCLIPS_BUFFER_LEDGER || DEFAULT_LEDGER_PATH,
   };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
@@ -50,8 +54,28 @@ function parseArgs(argv) {
     else if (key === "top") args.top = Number(val) || 5;
     else if (key === "output") args.output = val;
     else if (key === "project") args.projectId = val;
+    else if (key === "ledger") args.ledgerPath = val;
   }
   return args;
+}
+
+function loadSentClipIds(ledgerPath) {
+  if (!existsSync(ledgerPath)) return new Set();
+  try {
+    const parsed = JSON.parse(readFileSync(ledgerPath, "utf8"));
+    const entries = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.runs) ? parsed.runs : [];  // handle old dict format
+    const ids = new Set();
+    for (const entry of entries) {
+      for (const slot of entry.schedule || []) {
+        if (slot.clipId) ids.add(slot.clipId);
+      }
+    }
+    return ids;
+  } catch {
+    return new Set();
+  }
 }
 
 // ── Scoring ──────────────────────────────────────────────────────────────────
@@ -171,6 +195,19 @@ async function main() {
 
   if (!clips.length) {
     process.stderr.write("No clips found. Start the OpenClips server and submit source videos first.\n");
+    process.exit(1);
+  }
+
+  // Exclude clips already sent to Buffer
+  const sentIds = loadSentClipIds(args.ledgerPath);
+  if (sentIds.size > 0) {
+    const before = clips.length;
+    clips = clips.filter((c) => !sentIds.has(c.id));
+    process.stderr.write(`Excluded ${before - clips.length} already-sent clip(s) (${clips.length} remaining).\n`);
+  }
+
+  if (!clips.length) {
+    process.stderr.write("No unsent clips available after deduplication.\n");
     process.exit(1);
   }
 
