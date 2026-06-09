@@ -117,11 +117,16 @@ if (!readyProjects.length) {
   process.exit(1);
 }
 
-// Gather all eligible clips
+// Gather all eligible clips — skip any already sent to Buffer
+function alreadyScheduled(clip) {
+  return (clip.bufferSchedules || []).some(s => s.status === "scheduled");
+}
+
 const candidates = [];
 for (const project of readyProjects) {
   for (const clip of (project.clips || [])) {
     if (!clip.downloadUrl) continue;
+    if (alreadyScheduled(clip)) continue;
     candidates.push({
       projectId: project.id,
       projectTitle: project.title || "",

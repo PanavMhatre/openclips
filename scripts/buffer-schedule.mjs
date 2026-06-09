@@ -137,6 +137,10 @@ async function loadClipsFromStdin() {
   return JSON.parse(raw);
 }
 
+function alreadyScheduled(clip) {
+  return (clip.bufferSchedules || []).some(s => s.status === "scheduled");
+}
+
 async function loadTopClips(count) {
   // Fetch all ready projects from API
   const res = await fetch(`${OPENCLIPS_URL}/api/projects`, {
@@ -152,6 +156,7 @@ async function loadTopClips(count) {
   for (const project of ready) {
     for (const clip of (project.clips || [])) {
       if (!clip.downloadUrl) continue;
+      if (alreadyScheduled(clip)) continue; // never re-send a clip already in Buffer
       const rs = Number(clip.score || 0) + scoreHook(clip.hook || clip.title) * 25;
       candidates.push({ project, clip, rankScore: rs });
     }
@@ -317,6 +322,16 @@ console.log(`\n${succeeded}/${plan.length} slots scheduled.`);
 if (succeeded > 0) {
   if (!ledger.scheduledDates.includes(scheduleDate)) {
     ledger.scheduledDates.push(scheduleDate);
+  }
+  // Record scheduled clip IDs so they are never re-sent
+  ledger.scheduledClipIds = ledger.scheduledClipIds || [];
+  for (const [i, r] of results.entries()) {
+    if (r.success) {
+      const clipId = plan[i]?.clip?.id;
+      if (clipId && !ledger.scheduledClipIds.includes(clipId)) {
+        ledger.scheduledClipIds.push(clipId);
+      }
+    }
   }
   ledger.history.push({
     date: scheduleDate,
