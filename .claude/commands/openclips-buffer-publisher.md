@@ -185,6 +185,18 @@ On success, print the schedule summary: date, each slot's time and clip title, a
 
 ---
 
+### Step 5.5 — Cleanup old source files
+
+After a successful live schedule, always run:
+
+```bash
+node scripts/cleanup-old-sources.mjs
+```
+
+This deletes source videos (full YouTube downloads) older than 5 days. Clips in `data/clips/` are never touched. Report how much disk space was freed.
+
+---
+
 ### Step 6 — Report
 
 Summarise what happened:
