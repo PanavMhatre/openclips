@@ -55,6 +55,8 @@ const FFMPEG_FILTER_THREADS = Math.max(1, Number(process.env.OPENCLIPS_FFMPEG_FI
 const FACE_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_FACE_TRACKER_SAMPLES || 12));
 const BALL_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_BALL_TRACKER_SAMPLES || 12));
 const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 12));
+// Whisper word timestamps lag speech onset by ~100–200 ms; advance captions to compensate.
+const CAPTION_ADVANCE_S = Math.max(0, Number(process.env.OPENCLIPS_CAPTION_ADVANCE_MS ?? 120)) / 1000;
 const KEEP_FULL_SOURCE = /^(1|true|yes)$/i.test(String(process.env.OPENCLIPS_KEEP_FULL_SOURCE || ""));
 const YT_DLP_COOKIES_FILE = String(process.env.YT_DLP_COOKIES_FILE || "").trim();
 
@@ -3468,17 +3470,21 @@ function captionCues(segments, start, end, fallbackTitle) {
       for (let index = 0; index < words.length; index += 3) {
         const group = words.slice(index, index + 3);
         if (!group.length) continue;
+        // Shift the window earlier by CAPTION_ADVANCE_S to compensate for Whisper's
+        // word-timestamp lag (model finalizes timing after hearing context, not at onset).
+        const cueStart = Math.max(0, group[0].start - start - CAPTION_ADVANCE_S);
+        const cueEnd = Math.min(duration, group.at(-1).end - start + 0.22 - CAPTION_ADVANCE_S);
         cues.push({
-          start: Math.max(0, group[0].start - start),
-          end: Math.min(duration, group.at(-1).end - start + 0.22),
+          start: cueStart,
+          end: Math.max(cueStart + 0.15, cueEnd),
           text: group.map((word) => word.word).join(" "),
         });
       }
     } else {
       const words = text.split(/\s+/).filter(Boolean).slice(0, 8).join(" ");
       cues.push({
-        start: Math.max(0, segment.start - start),
-        end: Math.min(duration, segment.end - start),
+        start: Math.max(0, segment.start - start - CAPTION_ADVANCE_S),
+        end: Math.min(duration, segment.end - start - CAPTION_ADVANCE_S),
         text: words,
       });
     }
