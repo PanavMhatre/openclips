@@ -6,6 +6,21 @@
 - `ffmpeg` and `ffprobe` on `$PATH`
 - `yt-dlp` on `$PATH` (for YouTube source discovery)
 - `.env` file with `GROQ_API_KEY`, `BUFFER_API_KEY`, `BUFFER_CHANNEL_IDS`
+- YouTube cookies (required in cloud/CI environments — see below)
+
+## YouTube cookies (cloud environments)
+
+YouTube blocks unauthenticated yt-dlp requests from cloud IPs with HTTP 429.
+You must supply valid browser cookies:
+
+1. Install the [Get cookies.txt LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY) browser extension.
+2. On youtube.com (while signed in), export cookies as `cookies.txt` in Netscape format.
+3. Place the file at `~/.config/yt-dlp/cookies.txt`.
+4. Run `node scripts/setup-ytdlp.mjs` to write the yt-dlp config file, or
+   manually add `--cookies ~/.config/yt-dlp/cookies.txt` to `~/.config/yt-dlp/config`.
+
+Set `YOUTUBE_COOKIES_FILE=/path/to/cookies.txt` in `.env` to use a non-default path.
+`scripts/setup-ytdlp.mjs` reads this env var automatically.
 
 ## Starting the server
 

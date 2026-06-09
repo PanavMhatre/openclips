@@ -56,10 +56,10 @@ function parseChannelRoster(md) {
 async function ytDlpSearch(searchAlias, { minDuration, limit }) {
   const query = `ytsearch${limit * 5}:${searchAlias}`;
   const args = [
+    "--no-check-certificate",
     "--no-playlist",
     "--flat-playlist",
     "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s",
-    "--match-filter", `duration>${minDuration}`,
     "--no-warnings",
     query,
   ];
@@ -69,7 +69,7 @@ async function ytDlpSearch(searchAlias, { minDuration, limit }) {
     for (const line of stdout.trim().split("\n")) {
       if (!line.trim()) continue;
       const [url, title, duration, uploader] = line.split("\t");
-      if (url && title) {
+      if (url && title && Number(duration) >= minDuration) {
         results.push({ url: url.trim(), title: title.trim(), duration: Number(duration) || 0, uploader: (uploader || "").trim() });
       }
       if (results.length >= limit) break;

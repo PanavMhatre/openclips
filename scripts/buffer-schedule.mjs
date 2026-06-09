@@ -13,6 +13,7 @@
  *
  * Options:
  *   --dry-run              Print plan without calling Buffer or writing ledger
+ *   --undo                 Delete all Buffer posts from the most recent ledger entry
  *   --clips=<file>         JSON file with clip array (default: read from stdin)
  *   --date=<YYYY-MM-DD>    Force a specific publishing date (skips ledger check)
  *   --timezone=<tz>        Timezone for slot times (default: America/Chicago)
@@ -51,6 +52,7 @@ const SLOT_TIMES = [
 function parseArgs(argv) {
   const args = {
     dryRun: false,
+    undo: false,
     clipsFile: null,
     date: null,
     timezone: "America/Chicago",
@@ -59,6 +61,7 @@ function parseArgs(argv) {
   };
   for (const arg of argv.slice(2)) {
     if (arg === "--dry-run") { args.dryRun = true; continue; }
+    if (arg === "--undo") { args.undo = true; continue; }
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "clips") args.clipsFile = val;
     else if (key === "date") args.date = val;
@@ -285,8 +288,54 @@ async function readStdin() {
   return data.trim();
 }
 
+async function deletePost(postId) {
+  const data = await bufferGraphql(`
+    mutation { deletePost(input:{ id: ${graphqlString(postId)} }) {
+      ... on DeletePostSuccess { id }
+      ... on VoidMutationError { message }
+    } }
+  `);
+  const result = data?.deletePost;
+  if (result?.message) throw new Error(result.message);
+  return result?.id;
+}
+
+async function undoLastSchedule(ledger) {
+  const last = [...ledger].reverse().find((e) => e.clips?.some((c) => Object.keys(c.postIds || {}).length > 0));
+  if (!last) {
+    process.stderr.write("No scheduled entries with post IDs found in ledger.\n");
+    return ledger;
+  }
+  process.stderr.write(`Undoing schedule for ${last.date}...\n`);
+  let anyFailed = false;
+  for (const clip of last.clips) {
+    for (const [channelId, postId] of Object.entries(clip.postIds || {})) {
+      try {
+        await deletePost(postId);
+        process.stderr.write(`  [deleted] ${postId} (${channelId})\n`);
+      } catch (err) {
+        process.stderr.write(`  [error] ${postId}: ${err.message}\n`);
+        anyFailed = true;
+      }
+    }
+    clip.postIds = {};
+  }
+  last.undoneAt = new Date().toISOString();
+  if (anyFailed) process.stderr.write("Some deletions failed — check Buffer manually.\n");
+  return ledger;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
+
+  // --undo: delete last schedule's Buffer posts and update ledger
+  if (args.undo) {
+    const ledger = loadLedger();
+    const updated = await undoLastSchedule(ledger);
+    saveLedger(updated);
+    process.stderr.write("Undo complete. Ledger updated.\n");
+    return;
+  }
 
   // Load clips
   let clips;

@@ -28,13 +28,13 @@
  * `data/projects.json` does not exist.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
-const DEFAULT_CLIPS_DIR = path.join(ROOT_DIR, "clips");
+const DATA_CLIPS_DIR = path.join(ROOT_DIR, "data", "clips");
 const DEFAULT_META_PATH = path.join(ROOT_DIR, "data", "projects.json");
 
 function parseArgs(argv) {
@@ -42,7 +42,6 @@ function parseArgs(argv) {
     baseUrl: process.env.OPENCLIPS_URL || "http://localhost:3000",
     top: 5,
     output: null,
-    clipsDir: DEFAULT_CLIPS_DIR,
     projectId: null,
   };
   for (const arg of argv.slice(2)) {
@@ -50,7 +49,6 @@ function parseArgs(argv) {
     if (key === "base-url") args.baseUrl = val;
     else if (key === "top") args.top = Number(val) || 5;
     else if (key === "output") args.output = val;
-    else if (key === "clips-dir") args.clipsDir = val;
     else if (key === "project") args.projectId = val;
   }
   return args;
@@ -122,40 +120,24 @@ function loadFromFile(metaPath) {
   return null;
 }
 
-function loadFromClipsDir(clipsDir) {
-  if (!existsSync(clipsDir)) return [];
-  const files = readdirSync(clipsDir).filter((f) => f.endsWith(".mp4") && f !== ".gitkeep");
-  return files.map((file) => {
-    const slug = file.replace(/\.mp4$/, "").replace(/-[a-f0-9]{8}$/, "");
-    const words = slug.replace(/-/g, " ");
-    return {
-      id: file,
-      title: words.charAt(0).toUpperCase() + words.slice(1),
-      hook: words.charAt(0).toUpperCase() + words.slice(1),
-      focus: "",
-      score: 50,
-      duration: 45,
-      _hasFile: true,
-      _filePath: path.join(clipsDir, file),
-      _fileName: file,
-      _source: "clips-dir",
-    };
-  });
-}
-
-function flattenClips(projects, clipsDir) {
+function flattenClips(projects) {
   const clips = [];
   for (const project of projects) {
     if (project.status && project.status !== "ready") continue;
     for (const clip of project.clips || []) {
       const fileName = path.basename(clip.downloadUrl || clip.filePath || "");
-      const localPath = fileName ? path.join(clipsDir, fileName) : "";
+      // Check both data/clips/ and the path the server stored on disk
+      const localPath = fileName ? path.join(DATA_CLIPS_DIR, fileName) : "";
+      const hasFile = Boolean(
+        (localPath && existsSync(localPath)) ||
+        (clip.filePath && existsSync(clip.filePath)),
+      );
       clips.push({
         ...clip,
         _projectTitle: project.title || "",
         _projectId: project.id || "",
-        _hasFile: Boolean(fileName && existsSync(localPath)) || Boolean(clip.filePath && existsSync(clip.filePath)),
-        _filePath: localPath || clip.filePath || "",
+        _hasFile: hasFile,
+        _filePath: (hasFile && clip.filePath) ? clip.filePath : localPath,
         _fileName: fileName,
         _source: "api",
       });
@@ -175,26 +157,20 @@ async function main() {
   const apiProjects = await loadFromApi(args.baseUrl, args.projectId);
   if (apiProjects) {
     process.stderr.write(`Loaded ${apiProjects.length} project(s) from API.\n`);
-    clips = flattenClips(apiProjects, args.clipsDir);
+    clips = flattenClips(apiProjects);
   }
 
-  // 2. Fall back to data/projects.json
+  // 2. Fall back to data/projects.json (server wrote it but isn't running)
   if (!clips.length) {
     const fileProjects = loadFromFile(DEFAULT_META_PATH);
     if (fileProjects) {
       process.stderr.write(`Loaded ${fileProjects.length} project(s) from data/projects.json.\n`);
-      clips = flattenClips(fileProjects, args.clipsDir);
+      clips = flattenClips(fileProjects);
     }
   }
 
-  // 3. Fall back to clips/ directory
   if (!clips.length) {
-    process.stderr.write(`Server unavailable — scanning ${args.clipsDir} for MP4 files.\n`);
-    clips = loadFromClipsDir(args.clipsDir);
-  }
-
-  if (!clips.length) {
-    process.stderr.write("No clips found. Run the OpenClips server and submit source videos first.\n");
+    process.stderr.write("No clips found. Start the OpenClips server and submit source videos first.\n");
     process.exit(1);
   }
 
