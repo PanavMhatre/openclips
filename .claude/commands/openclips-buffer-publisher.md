@@ -147,10 +147,10 @@ If zero projects finished as `ready`, stop here with a clear error. Do not proce
 Run:
 
 ```bash
-node scripts/rank-openclips-clips.mjs --top=5 --output=/tmp/oc-top5.json
+node scripts/rank-openclips-clips.mjs --top=8 --output=/tmp/oc-top8.json
 ```
 
-Read `/tmp/oc-top5.json` and print the ranked list:
+Read `/tmp/oc-top8.json` and print the ranked list:
 - Rank, score, title/hook, duration, source project
 
 If fewer than 3 clips are available, warn the user and ask whether to continue. If they say yes, proceed. If they say no, stop.
@@ -162,7 +162,7 @@ If fewer than 3 clips are available, warn the user and ask whether to continue. 
 **Dry run:**
 ```bash
 node scripts/buffer-schedule.mjs \
-  --clips=/tmp/oc-top5.json \
+  --clips=/tmp/oc-top8.json \
   [--date=YYYY-MM-DD if provided] \
   --dry-run
 ```
@@ -172,7 +172,7 @@ Show the user the full dry-run output (date, times, clip titles, public URLs). A
 **Live run** (after confirmation):
 ```bash
 node scripts/buffer-schedule.mjs \
-  --clips=/tmp/oc-top5.json \
+  --clips=/tmp/oc-top8.json \
   [--date=YYYY-MM-DD if provided]
 ```
 

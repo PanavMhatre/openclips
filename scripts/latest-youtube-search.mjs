@@ -53,13 +53,16 @@ function parseChannelRoster(md) {
   return channels;
 }
 
+// Titles that signal an audio-only upload (no real video track)
+const AUDIO_ONLY_TITLE_RE = /\b(audio\s*only|audio\s*version|podcast\s*audio|\(audio\)|\[audio\])\b/i;
+
 async function ytDlpSearch(searchAlias, { minDuration, limit }) {
   const query = `ytsearch${limit * 5}:${searchAlias}`;
   const args = [
     "--no-check-certificate",
     "--no-playlist",
     "--flat-playlist",
-    "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s",
+    "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
     "--no-warnings",
     query,
   ];
@@ -68,10 +71,21 @@ async function ytDlpSearch(searchAlias, { minDuration, limit }) {
     const results = [];
     for (const line of stdout.trim().split("\n")) {
       if (!line.trim()) continue;
-      const [url, title, duration, uploader] = line.split("\t");
-      if (url && title && Number(duration) >= minDuration) {
-        results.push({ url: url.trim(), title: title.trim(), duration: Number(duration) || 0, uploader: (uploader || "").trim() });
+      const [url, title, duration, uploader, vcodec] = line.split("\t");
+      if (!url || !title) continue;
+      if (Number(duration) < minDuration) continue;
+
+      // Skip audio-only uploads — vcodec will be "none" or missing,
+      // and titles often contain "(Audio)" markers
+      const isAudioOnly =
+        (vcodec && vcodec.trim().toLowerCase() === "none") ||
+        AUDIO_ONLY_TITLE_RE.test(title);
+      if (isAudioOnly) {
+        process.stderr.write(`    [skip audio-only] ${title.slice(0, 60)}\n`);
+        continue;
       }
+
+      results.push({ url: url.trim(), title: title.trim(), duration: Number(duration) || 0, uploader: (uploader || "").trim() });
       if (results.length >= limit) break;
     }
     return results;

@@ -46,6 +46,8 @@ const SLOT_TIMES = [
   { hour: 13, minute: 30 },
   { hour: 15, minute: 0 },
   { hour: 16, minute: 30 },
+  { hour: 18, minute: 0 },
+  { hour: 19, minute: 30 },
 ];
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
