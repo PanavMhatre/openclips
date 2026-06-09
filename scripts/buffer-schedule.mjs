@@ -45,6 +45,7 @@ const SLOT_TIMES = [
   { hour: 12, minute: 0 },
   { hour: 13, minute: 30 },
   { hour: 15, minute: 0 },
+  { hour: 16, minute: 30 },
 ];
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
@@ -358,10 +359,11 @@ async function main() {
     process.exit(1);
   }
 
-  const top5 = clips.slice(0, 5);
+  const numSlots = SLOT_TIMES.length;
+  const top5 = clips.slice(0, numSlots);
 
-  if (top5.length < 5) {
-    process.stderr.write(`Warning: only ${top5.length} clip(s) available (expected 5).\n`);
+  if (top5.length < numSlots) {
+    process.stderr.write(`Warning: only ${top5.length} clip(s) available (expected ${numSlots}).\n`);
   }
 
   // Resolve channel IDs
@@ -448,8 +450,17 @@ async function main() {
         process.stderr.write(`  [error] Slot ${item.slot} → channel ${channelId}: ${err.message}\n`);
         anyFailed = true;
       }
+      // Avoid Buffer rate limits
+      await new Promise((r) => setTimeout(r, 1500));
     }
-    results.push({ slot: item.slot, title: item.clip.hook || item.clip.title, file: item.clip._fileName || "", postIds, dueAt: item.dueAt });
+    results.push({ slot: item.slot, title: item.clip.hook || item.clip.title, file: item.clip._fileName || "", postIds, dueAt: item.dueAt, clipId: item.clip.id });
+  }
+
+  // Only write to ledger if at least one post succeeded
+  const anySucceeded = results.some((r) => Object.keys(r.postIds).length > 0);
+  if (!anySucceeded) {
+    process.stderr.write("\nAll posts failed — ledger NOT updated. Fix errors and retry.\n");
+    process.exit(1);
   }
 
   // Update ledger
