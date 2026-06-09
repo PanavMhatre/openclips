@@ -68,6 +68,7 @@ async function getLatestVideoIds(channel, count) {
   // Try channel playlist first (most reliable)
   try {
     const { stdout } = await execFileAsync("yt-dlp", [
+      "--no-check-certificate",
       "--flat-playlist",
       "--no-warnings",
       "--no-playlist-reverse",
@@ -85,6 +86,7 @@ async function getLatestVideoIds(channel, count) {
   // Fallback: yt-dlp search
   try {
     const { stdout } = await execFileAsync("yt-dlp", [
+      "--no-check-certificate",
       "--flat-playlist",
       "--no-warnings",
       "--print", "%(id)s",
