@@ -13,6 +13,25 @@ Default workspace: `/home/user/openclips`
 Default OpenClips URL: `http://localhost:3000`  
 Default timezone: `America/Chicago`
 
+## Session startup (ALWAYS run first)
+
+Before doing anything YouTube-related, run the yt-dlp setup script:
+
+```bash
+node scripts/setup-yt-dlp.mjs
+```
+
+This installs the auth cookies and config into `~/.config/yt-dlp/` so every yt-dlp call is authenticated. **Skip this and YouTube downloads will be blocked.** If cookies have expired, export fresh ones from a browser logged into YouTube and overwrite `references/youtube-cookies.txt`.
+
+## YouTube bot-detection rules (CRITICAL)
+
+Submitting multiple YouTube URLs simultaneously triggers concurrent yt-dlp processes, which causes 429 rate-limits and permanently locks the server IP. **Videos must be submitted one at a time.**
+
+- `submit-openclips-projects.mjs` handles this automatically — it waits for each download to start before queuing the next, with a 45-second gap.
+- **Never** pipe many URLs at once and skip staggering.
+- **Never** restart the server while a yt-dlp download is in progress.
+- If projects fail with 403 or "Sign in to confirm you're not a bot" — the IP is flagged. Start a fresh session (new container = new IP) and run `setup-yt-dlp.mjs` first.
+
 ## Deduplication rule (CRITICAL)
 
 **Never schedule the same clip twice.** Before scheduling any clip, check:
@@ -37,25 +56,31 @@ This uploads each new clip in `clips/` to GitHub storage, schedules all three Bu
 
 ### Full pipeline path (server + yt-dlp + ffmpeg available)
 
-1. **Source newest videos**
+1. **Session setup** (FIRST — every session)
+   ```bash
+   node scripts/setup-yt-dlp.mjs
+   ```
+
+2. **Source newest videos**
    - Read `references/channel-roster.md` for channels.
    - Run `node scripts/latest-youtube-search.mjs` to get fresh URLs via yt-dlp.
 
-2. **Load into OpenClips**
+3. **Load into OpenClips**
    - Start OpenClips if needed: `npm run dev`
    - Run: `node scripts/latest-youtube-search.mjs | node scripts/submit-openclips-projects.mjs`
+   - The script staggeres submissions automatically (45s between each).
    - Do not restart the server while ffmpeg jobs are active.
 
-3. **Wait for rendering**
+4. **Wait for rendering**
    - Monitor `GET /api/projects` or `data/projects.json` until target projects reach `status: "ready"`.
    - If a project fails, call `POST /api/projects/:id/reprocess` (requires source video).
 
-4. **Rank clips**
+5. **Rank clips**
    - Run: `node scripts/rank-openclips-clips.mjs`
    - This automatically excludes already-scheduled clips.
    - Confirm all 5 candidates have valid `downloadUrl` values.
 
-5. **Schedule to Buffer — always live**
+6. **Schedule to Buffer — always live**
    - Run: `node scripts/buffer-schedule.mjs --live`
    - Or pipe from rank: `node scripts/rank-openclips-clips.mjs --json | node scripts/buffer-schedule.mjs --live --stdin-clips`
    - The script posts to all three channel IDs at 9:00, 10:30, 12:00, 13:30, 15:00 CT.
@@ -76,9 +101,10 @@ This uploads each new clip in `clips/` to GitHub storage, schedules all three Bu
 
 | Script | Purpose |
 |---|---|
+| `scripts/setup-yt-dlp.mjs` | **Run first every session.** Sets up yt-dlp cookies + config. |
 | `scripts/run-schedule-now.mjs --live` | Standalone: upload clips/ → GitHub → Buffer. No server required. |
 | `scripts/latest-youtube-search.mjs` | Find newest YouTube URLs from channel roster via yt-dlp. |
-| `scripts/submit-openclips-projects.mjs` | Queue source URLs into OpenClips via API. |
+| `scripts/submit-openclips-projects.mjs` | Queue source URLs one-at-a-time into OpenClips (staggered). |
 | `scripts/rank-openclips-clips.mjs` | Rank ready clips; excludes already-scheduled ones. |
 | `scripts/buffer-schedule.mjs --live` | Schedule top 5 via OpenClips API → Buffer. |
 
@@ -107,5 +133,6 @@ Before reporting the task as done:
 ## References
 
 - `references/channel-roster.md` — YouTube channel list for discovery.
+- `references/youtube-cookies.txt` — YouTube auth cookies (gitignored, refresh if bot-detection triggers).
 - `references/openclips-workflow.md` — API reference, project states, reprocess endpoints.
 - `references/buffer-scheduling.md` — Buffer API details, ledger format, media URL requirements.
