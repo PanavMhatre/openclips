@@ -6,12 +6,20 @@
  * references/channel-roster.md using yt-dlp, then prints a JSON array of
  * { title, url, channel, searchAlias } objects to stdout.
  *
+ * Channel weights (from the roster's Weight column) control how many
+ * recent videos are fetched per channel — heavier channels contribute
+ * more clips to the pool, matching the 40/35/25 posting mix.
+ *
+ * Audio-only uploads are hard-blocked at two levels:
+ *   1. yt-dlp vcodec field — "none" means no video track exists
+ *   2. Title pattern — "(Audio)", "[Audio]", "audio only", etc.
+ *
  * Usage:
  *   node scripts/latest-youtube-search.mjs [--min-duration=1200] [--limit=1]
  *
  * Options:
  *   --min-duration=<seconds>  Minimum video length in seconds (default: 1200 = 20 min)
- *   --limit=<n>               How many results per channel (default: 1)
+ *   --limit=<n>               Base results per channel; multiplied by channel Weight (default: 1)
  *   --output=<file>           Write JSON to file instead of stdout
  *
  * Requires: yt-dlp on $PATH
@@ -43,21 +51,33 @@ function parseArgs(argv) {
 function parseChannelRoster(md) {
   const channels = [];
   for (const line of md.split("\n")) {
-    // Match table rows: | Name | Handle | Search Alias |
-    const match = line.match(/^\|\s*([^|]+?)\s*\|\s*(@[^\s|]+|https?:\/\/[^\s|]+)\s*\|\s*([^|]+?)\s*\|/);
-    if (!match) continue;
-    const [, name, handle, alias] = match;
-    if (name.toLowerCase().includes("name")) continue; // header row
-    channels.push({ name: name.trim(), handle: handle.trim(), searchAlias: alias.trim() });
+    // Match table rows with 4 columns: | Name | Handle | Search Alias | Weight |
+    const match4 = line.match(/^\|\s*([^|]+?)\s*\|\s*(@[^\s|]+|https?:\/\/[^\s|]+)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|/);
+    if (match4) {
+      const [, name, handle, alias, weight] = match4;
+      if (name.toLowerCase().includes("name")) continue;
+      channels.push({ name: name.trim(), handle: handle.trim(), searchAlias: alias.trim(), weight: Number(weight) || 1 });
+      continue;
+    }
+    // Fall back to 3-column rows (no weight)
+    const match3 = line.match(/^\|\s*([^|]+?)\s*\|\s*(@[^\s|]+|https?:\/\/[^\s|]+)\s*\|\s*([^|]+?)\s*\|/);
+    if (match3) {
+      const [, name, handle, alias] = match3;
+      if (name.toLowerCase().includes("name")) continue;
+      channels.push({ name: name.trim(), handle: handle.trim(), searchAlias: alias.trim(), weight: 1 });
+    }
   }
   return channels;
 }
 
-// Titles that signal an audio-only upload (no real video track)
-const AUDIO_ONLY_TITLE_RE = /\b(audio\s*only|audio\s*version|podcast\s*audio|\(audio\)|\[audio\])\b/i;
+// Hard-block audio-only uploads by title.
+// Note: \b does not work next to ( ) [ ] so those are matched without word boundaries.
+const AUDIO_ONLY_TITLE_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b|\baudio\s+version\b|\bpodcast\s+audio\b/i;
 
 async function ytDlpSearch(searchAlias, { minDuration, limit }) {
-  const query = `ytsearch${limit * 5}:${searchAlias}`;
+  // Fetch more candidates than needed so we can filter audio-only and still hit limit
+  const fetchCount = Math.max(limit * 5, 10);
+  const query = `ytsearch${fetchCount}:${searchAlias}`;
   const args = [
     "--no-check-certificate",
     "--no-playlist",
@@ -67,30 +87,35 @@ async function ytDlpSearch(searchAlias, { minDuration, limit }) {
     query,
   ];
   try {
-    const { stdout } = await execFileAsync("yt-dlp", args, { timeout: 30_000 });
+    const { stdout } = await execFileAsync("yt-dlp", args, { timeout: 45_000 });
     const results = [];
     for (const line of stdout.trim().split("\n")) {
       if (!line.trim()) continue;
       const [url, title, duration, uploader, vcodec] = line.split("\t");
       if (!url || !title) continue;
-      if (Number(duration) < minDuration) continue;
+      const dur = Number(duration);
+      if (!dur || isNaN(dur) || dur < minDuration) continue;
 
-      // Skip audio-only uploads — vcodec will be "none" or missing,
-      // and titles often contain "(Audio)" markers
-      const isAudioOnly =
-        (vcodec && vcodec.trim().toLowerCase() === "none") ||
-        AUDIO_ONLY_TITLE_RE.test(title);
-      if (isAudioOnly) {
-        process.stderr.write(`    [skip audio-only] ${title.slice(0, 60)}\n`);
+      // Hard-block audio-only: vcodec="none" means no video stream
+      const vcNone = vcodec && vcodec.trim().toLowerCase() === "none";
+      const titleAudio = AUDIO_ONLY_TITLE_RE.test(title);
+      if (vcNone || titleAudio) {
+        process.stderr.write(`    [skip audio-only] ${title.slice(0, 65)}\n`);
         continue;
       }
 
-      results.push({ url: url.trim(), title: title.trim(), duration: Number(duration) || 0, uploader: (uploader || "").trim() });
+      results.push({
+        url: url.trim(),
+        title: title.trim(),
+        duration: Number(duration) || 0,
+        duration_str: duration ? `${Math.floor(Number(duration) / 60)}m` : "?",
+        uploader: (uploader || "").trim(),
+      });
       if (results.length >= limit) break;
     }
     return results;
   } catch (err) {
-    process.stderr.write(`[warn] yt-dlp search failed for "${searchAlias}": ${err.message}\n`);
+    process.stderr.write(`  [warn] yt-dlp search failed for "${searchAlias}": ${err.message}\n`);
     return [];
   }
 }
@@ -112,18 +137,26 @@ async function main() {
     process.exit(1);
   }
 
-  process.stderr.write(`Searching ${channels.length} channels (min duration: ${args.minDuration}s)...\n`);
+  process.stderr.write(`Searching ${channels.length} channels (min duration: ${args.minDuration}s, base limit: ${args.limit})...\n`);
 
   const results = [];
   for (const channel of channels) {
-    process.stderr.write(`  Searching: ${channel.name} ("${channel.searchAlias}")\n`);
-    const videos = await ytDlpSearch(channel.searchAlias, { minDuration: args.minDuration, limit: args.limit });
+    const effectiveLimit = args.limit * channel.weight;
+    process.stderr.write(`  [w${channel.weight}] ${channel.name} — "${channel.searchAlias}" (fetching up to ${effectiveLimit})\n`);
+    const videos = await ytDlpSearch(channel.searchAlias, { minDuration: args.minDuration, limit: effectiveLimit });
     for (const video of videos) {
-      results.push({ ...video, channel: channel.name, searchAlias: channel.searchAlias });
+      results.push({ ...video, channel: channel.name, searchAlias: channel.searchAlias, channelWeight: channel.weight });
+    }
+    if (videos.length === 0) {
+      process.stderr.write(`    [no results]\n`);
+    } else {
+      for (const v of videos) {
+        process.stderr.write(`    → ${v.title.slice(0, 65)} (${v.duration_str})\n`);
+      }
     }
   }
 
-  process.stderr.write(`Found ${results.length} video(s).\n`);
+  process.stderr.write(`\nFound ${results.length} video(s) across ${channels.length} channels.\n`);
 
   const json = JSON.stringify(results, null, 2);
   if (args.output) {
