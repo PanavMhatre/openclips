@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "setup": "node scripts/setup-environment.mjs",
+    "pipeline": "node scripts/run-pipeline.mjs",
     "dev": "node server/index.mjs",
     "build": "vite build",
     "preview": "NODE_ENV=production node server/index.mjs",
