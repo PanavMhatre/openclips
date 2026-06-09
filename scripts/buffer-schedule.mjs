@@ -82,7 +82,10 @@ function loadLedger() {
   const p = ledgerPath();
   if (!existsSync(p)) return [];
   try {
-    return JSON.parse(readFileSync(p, "utf8"));
+    const parsed = JSON.parse(readFileSync(p, "utf8"));
+    // migrate old object format { scheduledDates, runs } → array
+    if (parsed && !Array.isArray(parsed)) return [];
+    return parsed;
   } catch {
     return [];
   }
