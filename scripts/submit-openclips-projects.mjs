@@ -166,7 +166,8 @@ async function main() {
     process.stdout.write(json + "\n");
   }
 
-  process.exit(anyFailed ? 1 : 0);
+  // Exit 0 as long as at least one project is ready; only hard-fail if ALL failed.
+  process.exit(ready.length === 0 ? 1 : 0);
 }
 
 main().catch((err) => {
