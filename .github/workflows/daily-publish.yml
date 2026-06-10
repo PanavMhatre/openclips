@@ -29,7 +29,7 @@ jobs:
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_CHANNEL_IDS }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-      GITHUB_STORAGE_TOKEN: ${{ secrets.GITHUB_STORAGE_TOKEN }}
+      GITHUB_STORAGE_TOKEN: ${{ secrets.STORAGE_TOKEN }}
       GITHUB_STORAGE_REPO: PanavMhatre/openclips-media
       GITHUB_STORAGE_BRANCH: main
       GITHUB_STORAGE_DIR: clips
