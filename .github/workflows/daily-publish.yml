@@ -80,9 +80,6 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Setup yt-dlp config
-        run: node scripts/setup-ytdlp.mjs
-
       - name: Write yt-dlp cookies
         env:
           YTDLP_COOKIES: ${{ secrets.YTDLP_COOKIES }}
@@ -94,6 +91,9 @@ jobs:
           else
             echo "No YTDLP_COOKIES secret — skipping."
           fi
+
+      - name: Setup yt-dlp config
+        run: node scripts/setup-ytdlp.mjs
 
       - name: Start OpenClips server
         run: |
