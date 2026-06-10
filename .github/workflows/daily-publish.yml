@@ -1,0 +1,138 @@
+name: Daily Publish
+
+on:
+  schedule:
+    # 2am CST = 8am UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (plan only, no Buffer posts)'
+        type: boolean
+        default: false
+      skip_fetch:
+        description: 'Skip YouTube fetch, use existing clip pool'
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: write   # push clips to openclips-media
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+      BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_CHANNEL_IDS }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      GITHUB_STORAGE_TOKEN: ${{ secrets.GITHUB_STORAGE_TOKEN }}
+      GITHUB_STORAGE_REPO: PanavMhatre/openclips-media
+      GITHUB_STORAGE_BRANCH: main
+      GITHUB_STORAGE_DIR: clips
+      BUFFER_CHANNEL_INCLUDE: podbyteedits,podbyte
+      BUFFER_CHANNEL_EXCLUDE: clipvltdaily,clipvlt
+      PORT: 3000
+      OPENCLIPS_GROQ_CHAT_MODEL: llama-3.1-8b-instant
+      OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3
+      OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install yt-dlp & ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
+          ffmpeg -version | head -1
+
+      - name: Setup yt-dlp config
+        run: node scripts/setup-ytdlp.mjs
+
+      - name: Write yt-dlp cookies
+        if: ${{ secrets.YTDLP_COOKIES != '' }}
+        run: |
+          mkdir -p ~/.config/yt-dlp
+          echo "${{ secrets.YTDLP_COOKIES }}" > ~/.config/yt-dlp/cookies.txt
+          echo "Cookies written."
+
+      - name: Start OpenClips server
+        run: |
+          node server/index.mjs &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          # Wait up to 20s for server to be healthy
+          for i in $(seq 1 20); do
+            sleep 1
+            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.ffmpeg&&d.ytDlp&&d.groq?'ok':'bad')}catch{console.log('bad')}" 2>/dev/null || echo "bad")
+            if [ "$STATUS" = "ok" ]; then
+              echo "Server healthy after ${i}s"
+              break
+            fi
+          done
+          curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
+
+      - name: Fetch newest YouTube videos
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        run: |
+          node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
+          echo "Videos found:"
+          cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
+
+      - name: Submit & process videos
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        run: |
+          node scripts/submit-openclips-projects.mjs \
+            --input=/tmp/oc-fresh-urls.json \
+            --poll-interval=15000 \
+            --timeout=5400000 \
+            --output=/tmp/oc-finished-projects.json
+
+      - name: Rank top 8 clips
+        run: |
+          node scripts/rank-openclips-clips.mjs --top=8 --output=/tmp/oc-top8.json
+          echo "Top 8 clips:"
+          cat /tmp/oc-top8.json | node -e "
+            const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+            clips.forEach((c,i)=>console.log(\`  \${i+1}. \${c.hook||c.title} (\${Math.round((c.duration||0))}s)\`))
+          "
+
+      - name: Enhance clips with Pixabay images
+        run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
+
+      - name: Schedule to Buffer (dry run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run
+
+      - name: Schedule to Buffer (live)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json
+
+      - name: Cleanup old source files
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: node scripts/cleanup-old-sources.mjs
+
+      - name: Upload ledger as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buffer-ledger-${{ github.run_id }}
+          path: ~/.codex/openclips-buffer-publisher-ledger.json
+          if-no-files-found: ignore
