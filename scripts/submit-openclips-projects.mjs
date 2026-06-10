@@ -166,8 +166,12 @@ async function main() {
     process.stdout.write(json + "\n");
   }
 
-  // Exit 0 as long as at least one project is ready; only hard-fail if ALL failed.
-  process.exit(ready.length === 0 ? 1 : 0);
+  // Exit 0 as long as at least 5 projects are ready.
+  if (ready.length < 5) {
+    process.stderr.write(`Error: only ${ready.length} project(s) ready, need at least 5.\n`);
+    process.exit(1);
+  }
+  process.exit(0);
 }
 
 main().catch((err) => {
