@@ -2,8 +2,10 @@ name: Daily Publish
 
 on:
   schedule:
-    # 2am CST = 8am UTC
-    - cron: '0 8 * * *'
+    # 2am CST = 8am UTC — starts June 12
+    - cron: '0 8 12-31 6 *'
+    - cron: '0 8 * 7-12 *'
+    - cron: '0 8 * 1-5 *'
   workflow_dispatch:
     inputs:
       dry_run:
