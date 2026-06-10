@@ -67,14 +67,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install yt-dlp & ffmpeg
+      - name: Install yt-dlp, ffmpeg & deno
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg unzip
+          # yt-dlp
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod +x /usr/local/bin/yt-dlp
           yt-dlp --version
           ffmpeg -version | head -1
+          # Deno — required by yt-dlp to solve YouTube JS challenges
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
