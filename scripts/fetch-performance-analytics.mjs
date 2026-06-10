@@ -126,54 +126,35 @@ async function fetchZernioAnalytics(apiKey) {
   return allPosts;
 }
 
-// ── YouTube Data API ─────────────────────────────────────────────────────────
-
-const CHANNEL_HANDLES = [
-  "@MyFirstMillionPod",
-  "@AlexHormozi",
-  "@CodieSanchez",
-  "@ycombinator",
-  "@a16z",
-  "@AcquiredFM",
-  "@allin",
-  "@lexfridman",
-  "@TheDiaryOfACEO",
-  "@timferriss",
-  "@ShaneAParrish",
-  "@InvestLiketheBest",
-];
+// ── YouTube Data API — OWN channel only ──────────────────────────────────────
+// Channel ID for the podbyte YouTube channel.
+// Override via YOUTUBE_CHANNEL_ID env var if ever needed.
+const OWN_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || "UCxpuUfM_jjqz-sq6ETmuFEQ";
 
 async function fetchYouTubeAnalytics(apiKey) {
-  if (!apiKey) { process.stderr.write("YOUTUBE_API_KEY not set — skipping YouTube analytics.\n"); return { channelScores: {}, topVideos: [] }; }
+  if (!apiKey) { process.stderr.write("YOUTUBE_API_KEY not set — skipping YouTube analytics.\n"); return { videoStats: [], topVideos: [] }; }
 
-  const channelScores = {};
   const topVideos = [];
 
-  for (const handle of CHANNEL_HANDLES) {
-    // Resolve channel ID from handle
-    const { data: chData } = await fetchJson(
-      `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet,contentDetails&forHandle=${handle.replace("@", "")}&key=${apiKey}`
-    );
-    const ch = chData?.items?.[0];
-    if (!ch) { process.stderr.write(`  YouTube: ${handle} not found\n`); continue; }
+  // Fetch channel info
+  const { data: chData } = await fetchJson(
+    `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet,contentDetails&id=${OWN_CHANNEL_ID}&key=${apiKey}`
+  );
+  const ch = chData?.items?.[0];
+  if (!ch) { process.stderr.write(`  YouTube: channel ${OWN_CHANNEL_ID} not found\n`); return { topVideos: [] }; }
 
-    const stats = ch.statistics;
-    const uploadsPlaylistId = ch.contentDetails?.relatedPlaylists?.uploads;
-    const subscribers = parseInt(stats?.subscriberCount || "0", 10);
-    const totalViews  = parseInt(stats?.viewCount || "0", 10);
+  const stats = ch.statistics;
+  const uploadsPlaylistId = ch.contentDetails?.relatedPlaylists?.uploads;
+  process.stderr.write(`  ${ch.snippet.title}: ${stats.subscriberCount} subs, ${stats.videoCount} videos, ${stats.viewCount} total views\n`);
 
-    process.stderr.write(`  ${handle}: ${(subscribers/1e6).toFixed(1)}M subs, ${(totalViews/1e9).toFixed(1)}B views\n`);
-
-    // Score the channel by engagement proxy (views/video)
-    const videoCount = parseInt(stats?.videoCount || "1", 10);
-    channelScores[handle] = Math.round(totalViews / Math.max(videoCount, 1));
-
-    // Fetch latest 10 uploads
-    if (uploadsPlaylistId) {
+  // Fetch all uploads (up to 50 most recent)
+  if (uploadsPlaylistId) {
+    for (const handle of ["dummy"]) { // single iteration
       const { data: plData } = await fetchJson(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=10&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=50&key=${apiKey}`
       );
       const videoIds = (plData?.items || []).map(i => i.contentDetails?.videoId).filter(Boolean);
+      process.stderr.write(`  Fetching stats for ${videoIds.length} videos...\n`);
 
       if (videoIds.length) {
         const { data: vData } = await fetchJson(
@@ -182,21 +163,22 @@ async function fetchYouTubeAnalytics(apiKey) {
         for (const v of vData?.items || []) {
           topVideos.push({
             title: v.snippet?.title || "",
-            channelHandle: handle,
             channelName: v.snippet?.channelTitle || "",
             views: parseInt(v.statistics?.viewCount || "0", 10),
             likes: parseInt(v.statistics?.likeCount || "0", 10),
             comments: parseInt(v.statistics?.commentCount || "0", 10),
+            favorites: parseInt(v.statistics?.favoriteCount || "0", 10),
             publishedAt: v.snippet?.publishedAt || "",
             duration: v.contentDetails?.duration || "",
             videoId: v.id,
           });
         }
+        process.stderr.write(`  Top video: "${topVideos.sort((a,b)=>b.views-a.views)[0]?.title?.slice(0,60)}" (${topVideos[0]?.views} views)\n`);
       }
     }
   }
 
-  return { channelScores, topVideos };
+  return { topVideos };
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -242,21 +224,20 @@ async function main() {
       publishedAt: p.publishedAt,
     }));
 
-  // 2. YouTube channel analytics
-  process.stderr.write("\n[2/2] YouTube channel stats...\n");
-  const { channelScores: ytChannelRaw, topVideos } = await fetchYouTubeAnalytics(YOUTUBE_KEY);
+  // 2. YouTube — own channel video performance
+  process.stderr.write("\n[2/2] YouTube channel stats (own channel)...\n");
+  const { topVideos } = await fetchYouTubeAnalytics(YOUTUBE_KEY);
 
-  // Build topic scores from YouTube video titles too
+  // Build topic scores from YouTube video performance on own channel
   for (const v of topVideos) {
-    const score = (v.views / 1000) + v.likes * 2 + v.comments * 3;
+    const score = (v.views / 100) + v.likes * 5 + v.comments * 8;
     for (const kw of extractKeywords(v.title)) {
       topicRaw[kw] = (topicRaw[kw] || 0) + score;
     }
   }
 
   // Normalise scores
-  const topicScores   = normalise(topicRaw);
-  const channelScores = normalise(ytChannelRaw);
+  const topicScores = normalise(topicRaw);
 
   // Top YouTube videos by views
   const topYouTubeVideos = [...topVideos]
@@ -267,12 +248,10 @@ async function main() {
     generatedAt: new Date().toISOString(),
     summary: {
       zernioPostsAnalysed: zPosts.length,
-      youtubeChannelsAnalysed: Object.keys(channelScores).length,
       youtubeVideosAnalysed: topVideos.length,
       topTopics: Object.entries(topicScores).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k}(${v})`),
     },
     topicScores,
-    channelScores,
     topPosts,
     topYouTubeVideos,
   };

@@ -60,15 +60,8 @@ function analyticsBoost(clip, signals) {
   }
   const topicBoost = topicHits > 0 ? Math.min(20, Math.round((topicSum / topicHits) * 0.2)) : 0;
 
-  // Channel score — if we know which channel this clip came from (max 10 pts)
-  let channelBoost = 0;
-  for (const [handle, score] of Object.entries(signals.channelScores || {})) {
-    const name = handle.replace("@", "").toLowerCase();
-    if (text.includes(name)) {
-      channelBoost = Math.min(10, Math.round(score * 0.1));
-      break;
-    }
-  }
+  // Channel boost removed — now single-channel YouTube, no per-source-channel scores
+  const channelBoost = 0;
 
   if (topicBoost + channelBoost > 0) {
     process.stderr.write(`  [analytics boost] "${(clip.hook||clip.title||"").slice(0,50)}" +${topicBoost} topic +${channelBoost} channel\n`);
