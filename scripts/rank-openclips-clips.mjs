@@ -33,6 +33,51 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import path from "node:path";
 
+// ── Performance signals (written by fetch-performance-analytics.mjs) ─────────
+function loadPerformanceSignals() {
+  const sigPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "performance-signals.json");
+  try {
+    const raw = readFileSync(sigPath, "utf8");
+    const d = JSON.parse(raw);
+    process.stderr.write(`[analytics] Loaded signals from ${new Date(d.generatedAt).toLocaleString()} — ${Object.keys(d.topicScores||{}).length} topics, ${Object.keys(d.channelScores||{}).length} channels\n`);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+function analyticsBoost(clip, signals) {
+  if (!signals) return 0;
+  const text = ((clip.hook || "") + " " + (clip.title || "") + " " + (clip.focus || "") + " " + (clip._projectTitle || "")).toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+  const words = text.split(/\s+/).filter(w => w.length > 3);
+
+  // Topic score — sum of normalised topic scores for matching keywords (max 20 pts)
+  let topicSum = 0;
+  let topicHits = 0;
+  for (const w of words) {
+    const s = signals.topicScores?.[w];
+    if (s) { topicSum += s; topicHits++; }
+  }
+  const topicBoost = topicHits > 0 ? Math.min(20, Math.round((topicSum / topicHits) * 0.2)) : 0;
+
+  // Channel score — if we know which channel this clip came from (max 10 pts)
+  let channelBoost = 0;
+  for (const [handle, score] of Object.entries(signals.channelScores || {})) {
+    const name = handle.replace("@", "").toLowerCase();
+    if (text.includes(name)) {
+      channelBoost = Math.min(10, Math.round(score * 0.1));
+      break;
+    }
+  }
+
+  if (topicBoost + channelBoost > 0) {
+    process.stderr.write(`  [analytics boost] "${(clip.hook||clip.title||"").slice(0,50)}" +${topicBoost} topic +${channelBoost} channel\n`);
+  }
+  return topicBoost + channelBoost;
+}
+
+const _signals = loadPerformanceSignals();
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DATA_CLIPS_DIR = path.join(ROOT_DIR, "data", "clips");
@@ -78,6 +123,55 @@ function loadSentClipIds(ledgerPath) {
   }
 }
 
+// ── Hook cleanup ──────────────────────────────────────────────────────────────
+
+/**
+ * Detect hooks that are truncated or weak and replace them with a clean version
+ * derived from the clip's title (which is always complete).
+ *
+ * A hook is considered broken if:
+ *   - It is entirely uppercase AND does not end with sentence-terminating punctuation
+ *     (.  ?  !) — this matches the pattern of raw AI output that got cut off
+ *   - OR it is under 5 words (too vague to be useful)
+ *   - OR it ends with a common dangling word (a preposition, article, number fragment)
+ */
+const SENTENCE_END_RE = /[.?!…]$/;
+const DANGLING_END_RE = /\b(a|an|the|and|or|but|of|in|on|at|to|for|with|by|from|that|this|than|more|no|not|\d+)$/i;
+
+function isTruncated(hook) {
+  if (!hook || hook.trim().length === 0) return true;
+  const h = hook.trim();
+  const words = h.split(/\s+/);
+  if (words.length < 5) return true;
+  // All-caps without sentence terminator = raw AI output, likely truncated
+  if (h === h.toUpperCase() && h.length > 10 && !SENTENCE_END_RE.test(h)) return true;
+  // Ends with a dangling word (sentence cut mid-thought)
+  if (DANGLING_END_RE.test(h)) return true;
+  return false;
+}
+
+/**
+ * Return the best hook text for a clip.
+ * Falls back: hook → title → focus (first sentence) → id
+ */
+function cleanHook(clip) {
+  const raw = (clip.hook || "").trim();
+  if (!isTruncated(raw)) return raw;
+
+  // Use title as fallback — it's always a complete, descriptive sentence
+  const title = (clip.title || clip._projectTitle || "").trim();
+  if (title && title.length > 8) return title;
+
+  // Last resort: first sentence of focus
+  const focus = (clip.focus || "").trim();
+  if (focus) {
+    const sentence = focus.split(/[.!?]/)[0].trim();
+    if (sentence.length > 8) return sentence;
+  }
+
+  return raw || clip.id || "Clip";
+}
+
 // ── Scoring ──────────────────────────────────────────────────────────────────
 
 const WEAK_HOOK_PATTERNS = [
@@ -90,6 +184,8 @@ const WEAK_HOOK_PATTERNS = [
 
 function hookScore(hook) {
   if (!hook || hook.trim().length < 8) return -20;
+  // Extra penalty for raw truncated hooks that slipped through
+  if (isTruncated(hook)) return -20;
   const h = hook.trim();
   if (WEAK_HOOK_PATTERNS.some((re) => re.test(h))) return -20;
   if (h.split(" ").length < 4) return -10;
@@ -114,7 +210,8 @@ function scoreClip(clip) {
   const focus = focusScore(clip.focus);
   const duration = durationScore(Number(clip.duration) || 0);
   const filePenalty = clip._hasFile ? 0 : -25;
-  return Math.max(0, base + hook + focus + duration + filePenalty);
+  const analytics = analyticsBoost(clip, _signals); // up to +30 pts from real performance data
+  return Math.max(0, base + hook + focus + duration + filePenalty + analytics);
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -156,7 +253,7 @@ function flattenClips(projects) {
         (localPath && existsSync(localPath)) ||
         (clip.filePath && existsSync(clip.filePath)),
       );
-      clips.push({
+      const assembled = {
         ...clip,
         _projectTitle: project.title || "",
         _projectId: project.id || "",
@@ -164,7 +261,14 @@ function flattenClips(projects) {
         _filePath: (hasFile && clip.filePath) ? clip.filePath : localPath,
         _fileName: fileName,
         _source: "api",
-      });
+      };
+      // Rewrite hook in-place so downstream scripts (buffer-schedule) always get clean text
+      const cleaned = cleanHook(assembled);
+      if (cleaned !== (assembled.hook || "").trim()) {
+        process.stderr.write(`  [hook fix] "${(assembled.hook || "").slice(0, 50)}" → "${cleaned.slice(0, 60)}"\n`);
+        assembled.hook = cleaned;
+      }
+      clips.push(assembled);
     }
   }
   return clips;

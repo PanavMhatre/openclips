@@ -31,6 +31,8 @@ jobs:
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_CHANNEL_IDS }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       GITHUB_STORAGE_TOKEN: ${{ secrets.STORAGE_TOKEN }}
       GITHUB_STORAGE_REPO: PanavMhatre/openclips-media
       GITHUB_STORAGE_BRANCH: main
@@ -62,6 +64,7 @@ jobs:
             data/clips
             data/captions
             data/thumbs
+            data/performance-signals.json
           key: openclips-data-${{ github.run_id }}
           restore-keys: |
             openclips-data-
@@ -123,6 +126,14 @@ jobs:
             --poll-interval=15000 \
             --timeout=5400000 \
             --output=/tmp/oc-finished-projects.json
+
+      - name: Fetch performance analytics
+        run: |
+          node scripts/fetch-performance-analytics.mjs --output=data/performance-signals.json || true
+          if [ -f data/performance-signals.json ]; then
+            echo "Analytics loaded:"
+            node -e "const d=JSON.parse(require('fs').readFileSync('data/performance-signals.json','utf8'));console.log('  Posts analysed:',d.summary.zernioPostsAnalysed);console.log('  YT channels:',d.summary.youtubeChannelsAnalysed);console.log('  Top topics:',d.summary.topTopics?.join(', '))"
+          fi
 
       - name: Rank top 8 clips
         run: |
@@ -212,6 +223,7 @@ jobs:
             data/clips
             data/captions
             data/thumbs
+            data/performance-signals.json
           key: openclips-data-${{ github.run_id }}
 
       - name: Upload ledger as artifact
