@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 120
 
     permissions:
-      contents: write   # push clips to openclips-media
+      contents: write
 
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -38,7 +38,8 @@ jobs:
       PORT: 3000
       OPENCLIPS_GROQ_CHAT_MODEL: llama-3.1-8b-instant
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3
-      OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "true"
+      # Keep clips local so enhance script can process them
+      OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
 
     steps:
       - name: Checkout
@@ -47,8 +48,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
+
+      # Cache projects.json + clips (excludes huge sources/ and uploads/)
+      - name: Restore data cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/projects.json
+            data/clips
+            data/captions
+            data/thumbs
+          key: openclips-data-${{ github.run_id }}
+          restore-keys: |
+            openclips-data-
 
       - name: Install dependencies
         run: npm ci
@@ -74,21 +88,17 @@ jobs:
             echo "$YTDLP_COOKIES" > ~/.config/yt-dlp/cookies.txt
             echo "Cookies written ($(wc -l < ~/.config/yt-dlp/cookies.txt) lines)."
           else
-            echo "No YTDLP_COOKIES secret set — skipping."
+            echo "No YTDLP_COOKIES secret — skipping."
           fi
 
       - name: Start OpenClips server
         run: |
           node server/index.mjs &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
-          # Wait up to 20s for server to be healthy
           for i in $(seq 1 20); do
             sleep 1
             STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.ffmpeg&&d.ytDlp&&d.groq?'ok':'bad')}catch{console.log('bad')}" 2>/dev/null || echo "bad")
-            if [ "$STATUS" = "ok" ]; then
-              echo "Server healthy after ${i}s"
-              break
-            fi
+            if [ "$STATUS" = "ok" ]; then echo "Server healthy after ${i}s"; break; fi
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
@@ -117,22 +127,86 @@ jobs:
             clips.forEach((c,i)=>console.log(\`  \${i+1}. \${c.hook||c.title} (\${Math.round((c.duration||0))}s)\`))
           "
 
+      - name: Download clips for enhancement
+        run: |
+          # Clips not present locally (cloud-only) — download from GitHub storage
+          node -e "
+            const clips = JSON.parse(require('fs').readFileSync('/tmp/oc-top8.json','utf8'));
+            const https = require('https');
+            const http = require('http');
+            const fs = require('fs');
+            const path = require('path');
+            fs.mkdirSync('data/clips', { recursive: true });
+            let pending = 0;
+            for (const clip of clips) {
+              const url = clip.downloadUrl;
+              if (!url || !/^https?:\/\//i.test(url)) continue;
+              const dest = path.join('data/clips', path.basename(url));
+              if (fs.existsSync(dest)) { console.log('Already local:', path.basename(dest)); continue; }
+              pending++;
+              const mod = url.startsWith('https') ? https : http;
+              const file = fs.createWriteStream(dest);
+              mod.get(url, res => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); console.log('Downloaded:', path.basename(dest)); pending--; });
+              }).on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
+            }
+            // Simple wait
+            const wait = () => { if (pending > 0) setTimeout(wait, 500); };
+            wait();
+          "
+
       - name: Enhance clips with Pixabay images
         run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
 
+      - name: Push enhanced clips to storage repo
+        run: |
+          # Upload enhanced clips back to openclips-media so Buffer URLs are correct
+          CLIPS=$(cat /tmp/oc-top8.json | node -e "
+            const c=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+            c.forEach(x=>{ const f=x._fileName||require('path').basename(x._filePath||''); if(f) console.log(f); });
+          ")
+          if [ -z "$CLIPS" ]; then echo "No clip filenames found, skipping push."; exit 0; fi
+
+          git clone --depth 1 https://x-access-token:${{ secrets.STORAGE_TOKEN }}@github.com/PanavMhatre/openclips-media.git /tmp/storage-repo
+          mkdir -p /tmp/storage-repo/clips
+
+          for CLIP in $CLIPS; do
+            SRC="data/clips/$CLIP"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "/tmp/storage-repo/clips/$CLIP"
+              echo "Staged: $CLIP"
+            fi
+          done
+
+          cd /tmp/storage-repo
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add clips/
+          git diff --staged --quiet && echo "No changes to push." || git commit -m "Enhanced clips $(date +%Y-%m-%d)" && git push
+
       - name: Schedule to Buffer (dry run)
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: |
-          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run
+        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run
 
       - name: Schedule to Buffer (live)
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: |
-          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json
+        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json
 
       - name: Cleanup old source files
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: node scripts/cleanup-old-sources.mjs
+
+      - name: Save data cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/projects.json
+            data/clips
+            data/captions
+            data/thumbs
+          key: openclips-data-${{ github.run_id }}
 
       - name: Upload ledger as artifact
         if: always()
