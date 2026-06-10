@@ -129,7 +129,7 @@ async function fetchZernioAnalytics(apiKey) {
 // ── YouTube Data API — OWN channel only ──────────────────────────────────────
 // Channel ID for the podbyte YouTube channel.
 // Override via YOUTUBE_CHANNEL_ID env var if ever needed.
-const OWN_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || "UCxpuUfM_jjqz-sq6ETmuFEQ";
+const OWN_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || "UC_ERJKaFlixaaKAJmSsghtA"; // @podbyteedits
 
 async function fetchYouTubeAnalytics(apiKey) {
   if (!apiKey) { process.stderr.write("YOUTUBE_API_KEY not set — skipping YouTube analytics.\n"); return { videoStats: [], topVideos: [] }; }
