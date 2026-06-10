@@ -280,8 +280,20 @@ async function createPost({ channelId, text, mediaUrl, dueAt, clip }) {
 
 // ── Caption text ──────────────────────────────────────────────────────────────
 
+/** Return the best display hook for a clip — never a truncated ALL-CAPS fragment. */
+function resolveHook(clip) {
+  const raw = (clip.hook || "").trim();
+  // Truncated: all-caps, no sentence-ending punctuation, or dangling common word at the end
+  const truncated =
+    raw.length === 0 ||
+    (raw === raw.toUpperCase() && raw.length > 10 && !/[.?!…]$/.test(raw)) ||
+    /\b(a|an|the|and|or|but|of|in|on|to|for|with|by|from|that|this|than|more|no|not|\d+)$/i.test(raw);
+  if (truncated) return (clip.title || clip._projectTitle || raw || "Podcast clip").slice(0, 120);
+  return raw;
+}
+
 function buildPostText(clip) {
-  const hook = clip.hook || clip.title || "";
+  const hook = resolveHook(clip);
   const focus = clip.focus ? `\n\n${clip.focus}` : "";
   return `${hook}${focus}`.trim();
 }
@@ -428,6 +440,31 @@ async function main() {
       writeFileSync(args.output, JSON.stringify({ dryRun: true, date: publishDate, plan }, null, 2));
     }
     return;
+  }
+
+  // Pre-flight: check Buffer capacity on every channel before posting anything
+  process.stderr.write(`Checking Buffer capacity...\n`);
+  const needed = plan.length;
+  for (const channelId of channelIds) {
+    const data = await bufferGraphql(`
+      query GetQueueCount {
+        channel(id: ${graphqlString(channelId)}) {
+          id
+          scheduledPosts: posts(filter: { status: scheduled }) { nodes { id } }
+        }
+      }
+    `).catch(() => null);
+    const used = data?.channel?.scheduledPosts?.nodes?.length ?? null;
+    if (used !== null) {
+      const limit = 10; // Buffer free plan hard limit
+      const available = limit - used;
+      process.stderr.write(`  Channel ${channelId}: ${used}/${limit} slots used, ${available} available (need ${needed}).\n`);
+      if (available < needed) {
+        process.stderr.write(`\nNot enough Buffer slots on channel ${channelId} — need ${needed}, only ${available} free.\n`);
+        process.stderr.write(`No posts were created. Re-run once existing scheduled posts have published.\n`);
+        process.exit(1);
+      }
+    }
   }
 
   // Live scheduling
