@@ -54,7 +54,7 @@ const FFMPEG_THREADS = Number(process.env.OPENCLIPS_FFMPEG_THREADS || 0); // 0 =
 const FFMPEG_FILTER_THREADS = Math.max(1, Number(process.env.OPENCLIPS_FFMPEG_FILTER_THREADS || 3));
 const FACE_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_FACE_TRACKER_SAMPLES || 12));
 const BALL_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_BALL_TRACKER_SAMPLES || 12));
-const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 12));
+const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 50));
 const KEEP_FULL_SOURCE = /^(1|true|yes)$/i.test(String(process.env.OPENCLIPS_KEEP_FULL_SOURCE || ""));
 const BACKGROUND_MUSIC_ENABLED = !/^(0|false|no)$/i.test(String(process.env.OPENCLIPS_BACKGROUND_MUSIC || "true"));
 const BACKGROUND_MUSIC_VOLUME = Math.max(
