@@ -4260,9 +4260,9 @@ function layoutViralHookLines(lines) {
   const maxBottom = PODCAST_FRAME_Y - Math.round(12 * VIDEO_SCALE_Y);
   const topPad = Math.round(200 * VIDEO_SCALE_Y);
   const available = Math.max(Math.round(88 * VIDEO_SCALE_Y), maxBottom - topPad);
-  // Base sizes: single line gets 64, two lines 56, three lines 48
-  let hookSize = Math.round((lineCount > 2 ? 48 : lineCount > 1 ? 56 : 64) * VIDEO_SCALE);
-  let hookStroke = Math.round(11 * VIDEO_SCALE);
+  // Base sizes: single line gets 54, two lines 46, three lines 40
+  let hookSize = Math.round((lineCount > 2 ? 40 : lineCount > 1 ? 46 : 54) * VIDEO_SCALE);
+  let hookStroke = Math.round(9 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
 
   while (lineCount * lineHeight > available && hookSize > 38) {
