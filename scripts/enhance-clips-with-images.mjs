@@ -50,19 +50,17 @@ const DATA_CLIPS_DIR = path.join(ROOT_DIR, "data", "clips");
 
 // ── Thresholds (calibrated on real clips) ────────────────────────────────────
 //
-// Scene-cut rate (primary):
+// Scene-cut rate (sole signal):
 //   GPS Spoofing (Veritasium B-roll): 42 cuts / 42s = 1.0 cuts/s  → styled
 //   All face-only clips:              0–7 cuts / 43s = ≤0.16/s    → face-only
 //   Threshold: 0.25 cuts/s (2× the highest face-only value)
 //
-// Bottom-strip edge density (secondary, catches baked-in captions):
-//   Face-only clips: 1.4–4.4         → all pass
-//   Clip with source captions: 6+    → caught
-//
-// Top strip is intentionally NOT checked — OpenClips always renders
-// a title card there, so it always looks "styled" even on face-only clips.
+// Bottom-strip edge density is intentionally NOT used — OpenClips always
+// renders captions in the lower third of its output clips, so that check
+// false-positives on every clip and skips them all.
+// Scene-cut rate alone correctly distinguishes talking-head podcast clips
+// from clips that already have B-roll, animations, or heavy editing.
 const CUTS_PER_SECOND_THRESHOLD = 0.25;  // normalised scene-cut rate
-const BOTTOM_EDGE_THRESHOLD     = 5.5;   // mean edge luma in bottom 15% strip
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
@@ -179,50 +177,29 @@ async function isFaceOnly(clipPath) {
     if (s) { width = s.width; height = s.height; duration = Number(s.duration) || 30; }
   } catch { /* use defaults */ }
 
-  const botH  = Math.round(height * 0.15);
-  const botY  = height - botH;
   const bodyH = Math.round(height * 0.50);
   const bodyY = Math.round(height * 0.25);
 
-  // Run both checks in parallel
-  const [cutResult, edgeResult] = await Promise.allSettled([
-
-    // Check 1: scene-cut rate in body zone
-    execFileAsync("ffmpeg", [
+  // Scene-cut rate in the middle 50% of the frame only.
+  // Top 25% excluded — OpenClips always renders a title card there.
+  // Bottom 25% excluded — OpenClips always renders captions there.
+  // High cut rate = already edited with B-roll → skip overlay.
+  // Low cut rate = talking-head podcast → add Pixabay images.
+  let cuts = 0, cutsPerSec = 0;
+  try {
+    const { stdout } = await execFileAsync("ffmpeg", [
       "-i", clipPath,
       "-vf", `crop=${width}:${bodyH}:0:${bodyY},select='gt(scene\\,0.30)',metadata=print:file=-`,
       "-an", "-f", "null", "-",
-    ], { timeout: 45_000 }).then(({ stdout }) => {
-      const cuts = (stdout.match(/pts_time/g) || []).length;
-      return { cuts, cutsPerSec: cuts / duration };
-    }),
+    ], { timeout: 45_000 });
+    cuts = (stdout.match(/pts_time/g) || []).length;
+    cutsPerSec = cuts / duration;
+  } catch { /* treat as 0 cuts — safe to enhance */ }
 
-    // Check 2: bottom-strip edge density
-    execFileAsync("ffmpeg", [
-      "-ss", "8", "-i", clipPath, "-vframes", "4",
-      "-vf", `crop=${width}:${botH}:0:${botY},edgedetect=low=0.05:high=0.2,signalstats=stat=tout,metadata=print:file=-`,
-      "-f", "null", "-",
-    ], { timeout: 15_000 }).then(({ stdout }) => {
-      const vals = [...stdout.matchAll(/lavfi\.signalstats\.YAVG=(\d+\.?\d*)/g)].map((m) => parseFloat(m[1]));
-      const mean = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
-      return { mean };
-    }),
-
-  ]);
-
-  const cuts      = cutResult.status === "fulfilled"  ? cutResult.value.cutsPerSec : 0;
-  const cutsTotal = cutResult.status === "fulfilled"  ? cutResult.value.cuts        : 0;
-  const edgeMean  = edgeResult.status === "fulfilled" ? edgeResult.value.mean       : 0;
-
-  const hasBroll   = cuts    > CUTS_PER_SECOND_THRESHOLD;
-  const hasCaptions = edgeMean > BOTTOM_EDGE_THRESHOLD;
-
-  const faceOnly = !hasBroll && !hasCaptions;
-  const reason = hasBroll
-    ? `B-roll/animation detected (${cutsTotal} cuts in ${duration.toFixed(0)}s = ${cuts.toFixed(2)}/s)`
-    : hasCaptions
-    ? `source captions detected (bottom edge mean: ${edgeMean.toFixed(1)})`
-    : `face-only (cuts: ${cutsTotal}, edge: ${edgeMean.toFixed(1)})`;
+  const faceOnly = cutsPerSec <= CUTS_PER_SECOND_THRESHOLD;
+  const reason = faceOnly
+    ? `face-only podcast (${cuts} cuts in ${duration.toFixed(0)}s = ${cutsPerSec.toFixed(2)}/s)`
+    : `already edited — B-roll/cuts detected (${cuts} cuts in ${duration.toFixed(0)}s = ${cutsPerSec.toFixed(2)}/s)`;
 
   return { faceOnly, reason };
 }
