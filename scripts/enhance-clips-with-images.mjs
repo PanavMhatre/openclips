@@ -65,7 +65,7 @@ const CUTS_PER_SECOND_THRESHOLD = 0.25;  // normalised scene-cut rate
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = { clipsFile: null, clipPath: null, topic: null, images: 3, dryRun: false, force: false };
+  const args = { clipsFile: null, clipPath: null, topic: null, images: 2, dryRun: false, force: false };
   for (const arg of argv.slice(2)) {
     if (arg === "--dry-run") { args.dryRun = true; continue; }
     if (arg === "--force")   { args.force  = true; continue; }
@@ -202,6 +202,108 @@ async function isFaceOnly(clipPath) {
     : `already edited — B-roll/cuts detected (${cuts} cuts in ${duration.toFixed(0)}s = ${cutsPerSec.toFixed(2)}/s)`;
 
   return { faceOnly, reason };
+}
+
+// ── Transcript importance scoring ────────────────────────────────────────────
+
+// Words that signal a high-value moment worth illustrating
+const IMPORTANCE_PATTERNS = [
+  /\$[\d,]+|\d+\s*(?:billion|million|trillion|thousand)\b/i,  // money amounts
+  /\d+\s*(?:percent|%)/i,                                     // percentages
+  /\d+(?:\.\d+)?\s*(?:x|times)\b/i,                          // multipliers
+  /\b(?:first|only|never|always|every|all|zero|none)\b/i,     // absolutes
+  /\b(?:biggest|largest|fastest|highest|lowest|best|worst)\b/i, // superlatives
+  /\b(?:secret|reason|truth|fact|proof|evidence|data)\b/i,    // claim words
+  /\b(?:billion|million|trillion)\b/i,                        // scale words
+  /\b(?:problem|crisis|collapse|fail|broke|dead|wrong)\b/i,   // tension words
+];
+
+/**
+ * Parse an SRT file into timed segments.
+ * Returns [{ startSec, endSec, text }]
+ */
+function parseSrt(srtContent) {
+  const blocks = srtContent.trim().split(/\n\s*\n/);
+  const result = [];
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 3) continue;
+    const timeMatch = lines[1].match(/(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/);
+    if (!timeMatch) continue;
+    const toSec = (h, m, s, ms) => Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+    const startSec = toSec(timeMatch[1], timeMatch[2], timeMatch[3], timeMatch[4]);
+    const endSec   = toSec(timeMatch[5], timeMatch[6], timeMatch[7], timeMatch[8]);
+    const text = lines.slice(2).join(" ");
+    result.push({ startSec, endSec, text });
+  }
+  return result;
+}
+
+/**
+ * Score a text fragment for importance (0–100).
+ */
+function importanceScore(text) {
+  let score = 0;
+  for (const pat of IMPORTANCE_PATTERNS) {
+    if (pat.test(text)) score += 20;
+  }
+  return Math.min(100, score);
+}
+
+/**
+ * Given SRT segments and clip duration, return up to `maxImages` timestamps
+ * (in seconds from clip start) where important content is being said.
+ * Falls back to evenly-spaced if transcript is too sparse.
+ *
+ * The clip's SRT timestamps are relative to the clip (start=0), not the source.
+ */
+function findImportantMoments(srtPath, clipDuration, maxImages) {
+  let segments = [];
+  try {
+    const content = readFileSync(srtPath, "utf8");
+    segments = parseSrt(content);
+  } catch { /* no SRT — fall back to even spacing */ }
+
+  if (segments.length < 5) {
+    // Too sparse — evenly spaced fallback
+    const gap = clipDuration / (maxImages + 1);
+    return Array.from({ length: maxImages }, (_, i) => gap * (i + 1));
+  }
+
+  // Group into 3-second windows, sum importance scores
+  const WINDOW = 3;
+  const windows = [];
+  for (let t = 2; t < clipDuration - 4; t += WINDOW) {
+    const inWindow = segments.filter((s) => s.startSec >= t && s.startSec < t + WINDOW);
+    const text = inWindow.map((s) => s.text).join(" ");
+    const score = importanceScore(text);
+    if (score > 0) windows.push({ t, score, text: text.slice(0, 60) });
+  }
+
+  if (!windows.length) {
+    // Nothing scored — fall back to even spacing
+    const gap = clipDuration / (maxImages + 1);
+    return Array.from({ length: maxImages }, (_, i) => gap * (i + 1));
+  }
+
+  // Sort by score descending, pick top N, re-sort by time, enforce min 8s spacing
+  const sorted = [...windows].sort((a, b) => b.score - a.score);
+  const picked = [];
+  for (const w of sorted) {
+    if (picked.length >= maxImages) break;
+    const tooClose = picked.some((p) => Math.abs(p.t - w.t) < 8);
+    if (!tooClose) {
+      process.stderr.write(`    Key moment @${w.t.toFixed(1)}s (score ${w.score}): "${w.text}"\n`);
+      picked.push(w);
+    }
+  }
+
+  if (!picked.length) {
+    const gap = clipDuration / (maxImages + 1);
+    return Array.from({ length: maxImages }, (_, i) => gap * (i + 1));
+  }
+
+  return picked.sort((a, b) => a.t - b.t).map((w) => w.t + 1);
 }
 
 // ── Pixabay image search ──────────────────────────────────────────────────────
@@ -345,10 +447,13 @@ async function findBestPlacement(clipPath, width = 720, height = 1280) {
  * @param {string[]} imgPaths      local paths to downloaded Pixabay images
  * @param {string}   captionFile   path to a pre-rendered caption PNG (undefined → no caption)
  */
-function buildOverlayFilter(clipDuration, imgPaths, captionFile) {
+function buildOverlayFilter(clipDuration, imgPaths, captionFile, startTimes = null) {
   const count        = imgPaths.length;
+  // Use provided start times, or fall back to even spacing
   const gap          = (clipDuration - 2) / count;
-  const showDuration = Math.min(4.0, gap * 0.85);
+  const showDuration = 3.5;
+  const defaultStarts = Array.from({ length: count }, (_, i) => 1 + i * gap);
+  const times = startTimes && startTimes.length === count ? startTimes : defaultStarts;
   const CARD_W = 380, PAD = 8, FADE = 0.5;
   const TOTAL_W = CARD_W + PAD * 2;           // 396px
   const X = Math.round((720 - TOTAL_W) / 2);  // 162 — horizontally centred
@@ -372,7 +477,7 @@ function buildOverlayFilter(clipDuration, imgPaths, captionFile) {
   // filtergraph parser from treating commas inside clip() as filter separators.
   let last = "0:v";
   for (let i = 0; i < count; i++) {
-    const start = 1 + i * gap;
+    const start = times[i];
     const end   = start + showDuration;
     const alphaExpr =
       `clip((T-${start.toFixed(3)})*${(1/FADE).toFixed(4)},0,1)` +
@@ -458,13 +563,24 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     return { status: "error" };
   }
 
-  // Step 5: probe duration, find clear placement, build filter
+  // Step 5: probe duration, find important moments, build filter
   const duration = await getVideoDuration(clipPath);
   if (duration < 8) {
     process.stderr.write(`    [skip] Clip too short (${duration.toFixed(1)}s)\n`);
     cleanupTmp(tmpDir, imgPaths);
     return { status: "too-short" };
   }
+
+  // Find SRT alongside the clip file
+  const srtPath = clipPath.replace(/\.mp4$/, ".srt");
+  const moments = findImportantMoments(
+    existsSync(srtPath) ? srtPath : null,
+    duration,
+    imgPaths.length,
+  );
+
+  // Trim imgPaths to match discovered moments (may be fewer than requested)
+  const usedImgPaths = imgPaths.slice(0, moments.length);
 
   // If -orig.mp4 exists, always render from the clean original (never stack overlays)
   const origPath = clipPath.replace(/\.mp4$/, "-orig.mp4");
@@ -518,13 +634,13 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     }
   }
 
-  const { filterComplex, mapArgs } = buildOverlayFilter(duration, imgPaths, captionFile);
+  const { filterComplex, mapArgs } = buildOverlayFilter(duration, usedImgPaths, captionFile, moments);
   const outPath = clipPath.replace(/\.mp4$/, "-enhanced.mp4");
 
   const ffmpegArgs = [
     "-y",
     "-i", sourcePath,         // input 0: always use original
-    ...imgPaths.flatMap((p) => ["-i", p]),  // inputs 1…N: Pixabay images
+    ...usedImgPaths.flatMap((p) => ["-i", p]),  // inputs 1…N: Pixabay images
     // input N+1: caption PNG, looped for the full clip duration
     ...(captionFile ? ["-loop", "1", "-t", String(duration), "-i", captionFile] : []),
     "-filter_complex", filterComplex,
@@ -537,7 +653,7 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     outPath,
   ];
 
-  process.stderr.write(`    Rendering ${imgPaths.length} overlay(s) onto ${duration.toFixed(1)}s clip...\n`);
+  process.stderr.write(`    Rendering ${usedImgPaths.length} overlay(s) at key moments onto ${duration.toFixed(1)}s clip...\n`);
   try {
     await execFileAsync("ffmpeg", ffmpegArgs, { timeout: 600_000 });
   } catch (err) {
@@ -559,7 +675,7 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
   renameSync(outPath, clipPath);
   process.stderr.write(`    ✓ Enhanced! (clean original kept at ${path.basename(origPath)})\n`);
 
-  cleanupTmp(tmpDir, imgPaths, captionFile);
+  cleanupTmp(tmpDir, usedImgPaths, captionFile);
   return { status: "enhanced", topic };
 }
 
