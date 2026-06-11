@@ -175,7 +175,7 @@ jobs:
           "
 
       - name: Enhance clips with Pixabay images
-        run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
+        run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json --force
 
       - name: Push enhanced clips to storage repo
         run: |
