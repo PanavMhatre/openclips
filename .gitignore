@@ -1,6 +1,7 @@
 node_modules
 dist
 data
+!data/strategy-brief.md
 .env
 .env.local
 .DS_Store
@@ -12,3 +13,4 @@ __pycache__/
 *.jpg
 *.jpeg
 *.onnx
+.gstack/
