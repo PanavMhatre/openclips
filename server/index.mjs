@@ -4257,19 +4257,23 @@ function evenOffset(value, max) {
 function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
-  const maxBottom = PODCAST_FRAME_Y - Math.round(12 * VIDEO_SCALE_Y);
-  const topPad = Math.round(200 * VIDEO_SCALE_Y);
-  const available = Math.max(Math.round(88 * VIDEO_SCALE_Y), maxBottom - topPad);
+  // Anchor text to the bottom of the top zone — right above the face frame
+  const maxBottom = PODCAST_FRAME_Y - Math.round(16 * VIDEO_SCALE_Y);
   // Base sizes: single line gets 54, two lines 46, three lines 40
   let hookSize = Math.round((lineCount > 2 ? 40 : lineCount > 1 ? 46 : 54) * VIDEO_SCALE);
   let hookStroke = Math.round(9 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
+  const minTop = Math.round(40 * VIDEO_SCALE_Y);
 
-  while (lineCount * lineHeight > available && hookSize > 38) {
+  while (lineCount * lineHeight > maxBottom - minTop && hookSize > 32) {
     hookSize -= 2;
-    hookStroke = Math.max(8, hookStroke - 1);
+    hookStroke = Math.max(7, hookStroke - 1);
     lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
   }
+
+  // Bottom-anchor: place block so its bottom sits just above the face
+  const blockHeight = lineCount * lineHeight;
+  const topPad = Math.max(minTop, maxBottom - blockHeight);
 
   return { safeLines, topPad, hookSize, hookStroke, lineHeight };
 }
