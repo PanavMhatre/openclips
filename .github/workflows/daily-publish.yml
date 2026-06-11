@@ -65,6 +65,7 @@ jobs:
             data/captions
             data/thumbs
             data/performance-signals.json
+            data/strategy-brief.md
           key: openclips-data-${{ github.run_id }}
           restore-keys: |
             openclips-data-
@@ -224,6 +225,7 @@ jobs:
             data/captions
             data/thumbs
             data/performance-signals.json
+            data/strategy-brief.md
           key: openclips-data-${{ github.run_id }}
 
       - name: Upload ledger as artifact

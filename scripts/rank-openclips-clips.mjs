@@ -39,12 +39,34 @@ function loadPerformanceSignals() {
   try {
     const raw = readFileSync(sigPath, "utf8");
     const d = JSON.parse(raw);
-    process.stderr.write(`[analytics] Loaded signals from ${new Date(d.generatedAt).toLocaleString()} — ${Object.keys(d.topicScores||{}).length} topics, ${Object.keys(d.channelScores||{}).length} channels\n`);
+    process.stderr.write(`[analytics] Loaded signals from ${new Date(d.generatedAt).toLocaleString()} — ${Object.keys(d.topicScores||{}).length} topics\n`);
     return d;
   } catch {
     return null;
   }
 }
+
+// ── Strategy brief (written by the scheduled Claude routine every 3 days) ────
+function loadStrategyBrief() {
+  const briefPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "data", "strategy-brief.md");
+  try {
+    const raw = readFileSync(briefPath, "utf8");
+    // Extract boost and avoid keyword lists from the brief
+    const boostMatch = raw.match(/## Boost keywords[^\n]*\n([^\n#]+)/);
+    const avoidMatch = raw.match(/## Avoid keywords[^\n]*\n([^\n#]+)/);
+    const boostWords = boostMatch ? boostMatch[1].toLowerCase().split(/[\s,]+/).filter(w => w.length > 2) : [];
+    const avoidWords = avoidMatch ? avoidMatch[1].toLowerCase().split(/[\s,]+/).filter(w => w.length > 2) : [];
+    if (boostWords.length || avoidWords.length) {
+      process.stderr.write(`[strategy] Brief loaded — boost: ${boostWords.slice(0,5).join(", ")}... avoid: ${avoidWords.slice(0,3).join(", ")}...\n`);
+    }
+    return { boostWords, avoidWords };
+  } catch {
+    return { boostWords: [], avoidWords: [] };
+  }
+}
+
+const _signals  = loadPerformanceSignals();
+const _strategy = loadStrategyBrief();
 
 function analyticsBoost(clip, signals) {
   if (!signals) return 0;
@@ -60,16 +82,20 @@ function analyticsBoost(clip, signals) {
   }
   const topicBoost = topicHits > 0 ? Math.min(20, Math.round((topicSum / topicHits) * 0.2)) : 0;
 
-  // Channel boost removed — now single-channel YouTube, no per-source-channel scores
-  const channelBoost = 0;
-
-  if (topicBoost + channelBoost > 0) {
-    process.stderr.write(`  [analytics boost] "${(clip.hook||clip.title||"").slice(0,50)}" +${topicBoost} topic +${channelBoost} channel\n`);
+  // Strategy brief: boost words from Claude's analysis (+15 pts max), avoid words (-15 pts)
+  let strategyBoost = 0;
+  let strategyPenalty = 0;
+  for (const w of words) {
+    if (_strategy.boostWords.includes(w)) { strategyBoost = Math.min(15, strategyBoost + 5); }
+    if (_strategy.avoidWords.includes(w)) { strategyPenalty = Math.max(-15, strategyPenalty - 5); }
   }
-  return topicBoost + channelBoost;
-}
 
-const _signals = loadPerformanceSignals();
+  const total = topicBoost + strategyBoost + strategyPenalty;
+  if (total !== 0) {
+    process.stderr.write(`  [analytics] "${(clip.hook||clip.title||"").slice(0,50)}" topic:+${topicBoost} strategy:${strategyBoost+strategyPenalty}\n`);
+  }
+  return total;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
