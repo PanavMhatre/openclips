@@ -54,7 +54,7 @@ const FFMPEG_THREADS = Number(process.env.OPENCLIPS_FFMPEG_THREADS || 0); // 0 =
 const FFMPEG_FILTER_THREADS = Math.max(1, Number(process.env.OPENCLIPS_FFMPEG_FILTER_THREADS || 3));
 const FACE_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_FACE_TRACKER_SAMPLES || 12));
 const BALL_TRACKER_SAMPLES = Math.max(6, Number(process.env.OPENCLIPS_BALL_TRACKER_SAMPLES || 12));
-const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 50));
+const MAX_CAPTION_OVERLAYS = Math.max(4, Number(process.env.OPENCLIPS_MAX_CAPTION_OVERLAYS || 80));
 const KEEP_FULL_SOURCE = /^(1|true|yes)$/i.test(String(process.env.OPENCLIPS_KEEP_FULL_SOURCE || ""));
 const BACKGROUND_MUSIC_ENABLED = !/^(0|false|no)$/i.test(String(process.env.OPENCLIPS_BACKGROUND_MUSIC || "true"));
 const BACKGROUND_MUSIC_VOLUME = Math.max(
@@ -3458,8 +3458,8 @@ function captionCues(segments, start, end, fallbackTitle) {
         .filter((word) => word.end > start && word.start < end)
         .map((word) => ({ ...word, word: cleanCaptionToken(word.word) }))
         .filter((word) => word.word);
-      for (let index = 0; index < words.length; index += 3) {
-        const group = words.slice(index, index + 3);
+      for (let index = 0; index < words.length; index += 2) {
+        const group = words.slice(index, index + 2);
         if (!group.length) continue;
         cues.push({
           start: Math.max(0, group[0].start - start),
@@ -4389,23 +4389,14 @@ async function createCaptionOverlay(text, outputPath) {
 }
 
 function captionLines(value) {
+  // Always one line — words already kept to 2 per cue by captionCues
   const words = String(value || "")
     .replace(/[.,!?;:]+$/g, "")
     .split(/\s+/)
     .filter(Boolean)
-    .slice(0, 4);
-  const lines = [];
-  let current = [];
-  for (let index = 0; index < words.length; index += 1) {
-    current.push({ word: words[index], type: captionWordType(words[index]) });
-    const length = current.map((token) => token.word).join(" ").length;
-    if ((current.length >= 3 || length > 14) && index < words.length - 1) {
-      lines.push({ tokens: current });
-      current = [];
-    }
-  }
-  if (current.length) lines.push({ tokens: current });
-  return lines.slice(0, 2).length ? lines.slice(0, 2) : [{ tokens: [{ word: "OPENCLIPS", type: "hot" }] }];
+    .slice(0, 3);
+  const tokens = words.map((word) => ({ word, type: captionWordType(word) }));
+  return tokens.length ? [{ tokens }] : [{ tokens: [{ word: "OPENCLIPS", type: "hot" }] }];
 }
 
 const COMPANY_WORDS = new Set([
