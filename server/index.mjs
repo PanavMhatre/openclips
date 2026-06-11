@@ -531,6 +531,9 @@ async function processProject(projectId, { skipBufferSchedule = false } = {}) {
     });
 
     const groqSlot = groqSlotForId(projectId);
+    if (!probe.hasVideo) {
+      throw new Error("Audio-only files are not allowed. A video track is required.");
+    }
     if (!probe.hasAudio) {
       throw new Error("This video has no audio track. Groq transcription is required.");
     }
@@ -2546,6 +2549,7 @@ async function probeVideo(videoPath) {
     width: Number(video.width || 1920),
     height: Number(video.height || 1080),
     hasAudio: audio,
+    hasVideo: Boolean(video.codec_type),
   };
 }
 
@@ -4871,6 +4875,9 @@ async function processSportsProject(projectId, { skipBufferSchedule = false } = 
     });
 
     const groqSlot = groqSlotForId(projectId);
+    if (!probe.hasVideo) {
+      throw new Error("Audio-only files are not allowed. A video track is required.");
+    }
     if (!probe.hasAudio) {
       throw new Error("This video has no audio track. Groq transcription is required.");
     }
