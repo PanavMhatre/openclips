@@ -352,8 +352,8 @@ function buildOverlayFilter(clipDuration, imgPaths, captionFile) {
   const CARD_W = 380, PAD = 8, FADE = 0.5;
   const TOTAL_W = CARD_W + PAD * 2;           // 396px
   const X = Math.round((720 - TOTAL_W) / 2);  // 162 — horizontally centred
-  const CAP_Y  = 700;   // caption — always visible, fixed above image
-  const IMG_Y  = 840;   // image card — below caption, pops in/out
+  const CAP_Y  = 700;   // unused (captions now baked in by server)
+  const IMG_Y  = 900;   // image card — below the caption zone (y≈679–870)
   const parts = [];
 
   // Scale + border each image into a static YUV card.

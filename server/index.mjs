@@ -4319,8 +4319,9 @@ async function createHookOverlay(hook, _score, outputPath, sourceContext = {}) {
 
 function layoutPodcastCaptionLines(lineCount) {
   const count = Math.max(1, lineCount);
-  const topLimit = PODCAST_FRAME_BOTTOM + Math.round(10 * VIDEO_SCALE_Y);
-  const bottomLimit = VIDEO_HEIGHT - Math.round(42 * VIDEO_SCALE_Y);
+  // Caption zone: lower body area of the face frame, above where the image card sits
+  const topLimit = Math.round(VIDEO_HEIGHT * 0.53);   // ~679px — mid-lower face
+  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.68); // ~870px — above image card
   const available = Math.max(Math.round(52 * VIDEO_SCALE_Y), bottomLimit - topLimit);
   let captionSize = Math.round(52 * VIDEO_SCALE);
   let captionStroke = Math.round(10 * VIDEO_SCALE);
