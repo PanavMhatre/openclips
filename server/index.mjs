@@ -4258,7 +4258,7 @@ function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
   const maxBottom = PODCAST_FRAME_Y - Math.round(12 * VIDEO_SCALE_Y);
-  const topPad = Math.round(72 * VIDEO_SCALE_Y);
+  const topPad = Math.round(200 * VIDEO_SCALE_Y);
   const available = Math.max(Math.round(88 * VIDEO_SCALE_Y), maxBottom - topPad);
   // Larger base sizes: single line gets 78, two lines 68, three lines 58
   let hookSize = Math.round((lineCount > 2 ? 58 : lineCount > 1 ? 68 : 78) * VIDEO_SCALE);
