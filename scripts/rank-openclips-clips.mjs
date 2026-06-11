@@ -52,8 +52,8 @@ function loadStrategyBrief() {
   try {
     const raw = readFileSync(briefPath, "utf8");
     // Extract boost and avoid keyword lists from the brief
-    const boostMatch = raw.match(/## Boost keywords[^\n]*\n([^\n#]+)/);
-    const avoidMatch = raw.match(/## Avoid keywords[^\n]*\n([^\n#]+)/);
+    const boostMatch = raw.match(/## Boost keywords[^\n]*\n\s*([^\n#]+)/);
+    const avoidMatch = raw.match(/## Avoid keywords[^\n]*\n\s*([^\n#]+)/);
     const boostWords = boostMatch ? boostMatch[1].toLowerCase().split(/[\s,]+/).filter(w => w.length > 2) : [];
     const avoidWords = avoidMatch ? avoidMatch[1].toLowerCase().split(/[\s,]+/).filter(w => w.length > 2) : [];
     if (boostWords.length || avoidWords.length) {
