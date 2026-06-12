@@ -201,19 +201,51 @@ const WEAK_HOOK_PATTERNS = [
   /^[A-Z][a-z]+\s+[A-Z][a-z]+$/,  // just two proper-noun words
 ];
 
+// Patterns that signal a hook with specific stakes — performs better based on analytics
+const STRONG_HOOK_PATTERNS = [
+  /\$[\d,]+|\d[\d,]*\s*(?:billion|million|trillion|thousand)/i,  // money amounts
+  /\d+\s*(?:percent|%)/i,                                         // percentages
+  /\b(?:vs\.?|versus|against|beats?|beat|outpaces?|crushes?)\b/i, // conflict frame
+  /\b(?:why|how|what|the real|the truth|the reason)\b/i,          // curiosity frame
+  /\b(?:never|always|every|no one|nobody|everyone|first|last|only)\b/i, // absolutes
+  /\b(?:crash|collapse|fail|bankrupt|dead|crisis|bubble|scam)\b/i, // tension
+  /\b(?:secret|proof|evidence|data|study|report)\b/i,             // authority
+  /\b\d+\s*(?:times|x)\b/i,                                       // multipliers
+];
+
+// Generic/vague patterns that correlate with 0 views
+const VAGUE_HOOK_PATTERNS = [
+  /^(?:this|that|it|they|he|she|we|you)\b/i,
+  /\b(?:needs?|wants?|should|could|might|may)\b.*\b(?:context|change|update|better|more)\b/i,
+  /^(?:a |an |the )?(?:discussion|conversation|talk|chat|look|overview|breakdown)\b/i,
+  /\b(?:interesting|fascinating|important|great|good|nice|cool|amazing)\b/i,
+];
+
 function hookScore(hook) {
   if (!hook || hook.trim().length < 8) return -20;
-  // Extra penalty for raw truncated hooks that slipped through
   if (isTruncated(hook)) return -20;
   const h = hook.trim();
   if (WEAK_HOOK_PATTERNS.some((re) => re.test(h))) return -20;
   if (h.split(" ").length < 4) return -10;
-  return 0;
+
+  let bonus = 0;
+  // Reward hooks that make a specific claim with stakes
+  const strongMatches = STRONG_HOOK_PATTERNS.filter((re) => re.test(h)).length;
+  bonus += Math.min(20, strongMatches * 7);
+  // Penalise vague hooks that analytics show get 0 views
+  if (VAGUE_HOOK_PATTERNS.some((re) => re.test(h))) bonus -= 15;
+
+  if (bonus !== 0) {
+    process.stderr.write(`  [hook] "${h.slice(0, 60)}" → ${bonus > 0 ? "+" : ""}${bonus}\n`);
+  }
+  return bonus;
 }
 
 function focusScore(focus) {
   if (!focus || focus.trim().length < 6) return 0;
-  return 15;
+  // Extra reward if focus contains specific numbers or conflict language
+  const hasClaim = /\$[\d,]+|\d+\s*%|\bvs\b|\bwhy\b|\bnever\b|\bcrash\b/i.test(focus);
+  return hasClaim ? 20 : 15;
 }
 
 function durationScore(seconds) {
@@ -229,7 +261,7 @@ function scoreClip(clip) {
   const focus = focusScore(clip.focus);
   const duration = durationScore(Number(clip.duration) || 0);
   const filePenalty = clip._hasFile ? 0 : -25;
-  const analytics = analyticsBoost(clip, _signals); // up to +30 pts from real performance data
+  const analytics = analyticsBoost(clip, _signals);
   return Math.max(0, base + hook + focus + duration + filePenalty + analytics);
 }
 
