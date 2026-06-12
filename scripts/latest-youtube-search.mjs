@@ -38,11 +38,12 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const ROSTER_PATH = path.join(ROOT_DIR, "references", "channel-roster.md");
 
 function parseArgs(argv) {
-  const args = { minDuration: 1200, limit: 1, output: null };
+  const args = { minDuration: 1200, limit: 1, total: 1, output: null };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "min-duration") args.minDuration = Number(val) || 1200;
     else if (key === "limit") args.limit = Number(val) || 1;
+    else if (key === "total") args.total = Number(val) || 1;
     else if (key === "output") args.output = val;
   }
   return args;
@@ -137,15 +138,17 @@ async function main() {
     process.exit(1);
   }
 
-  process.stderr.write(`Searching ${channels.length} channels (min duration: ${args.minDuration}s, base limit: ${args.limit})...\n`);
+  process.stderr.write(`Searching ${channels.length} channels (min duration: ${args.minDuration}s, total cap: ${args.total})...\n`);
 
   const results = [];
   for (const channel of channels) {
-    const effectiveLimit = args.limit * channel.weight;
+    if (results.length >= args.total) break;
+    const effectiveLimit = Math.min(args.limit * channel.weight, args.total - results.length);
     process.stderr.write(`  [w${channel.weight}] ${channel.name} — "${channel.searchAlias}" (fetching up to ${effectiveLimit})\n`);
     const videos = await ytDlpSearch(channel.searchAlias, { minDuration: args.minDuration, limit: effectiveLimit });
     for (const video of videos) {
       results.push({ ...video, channel: channel.name, searchAlias: channel.searchAlias, channelWeight: channel.weight });
+      if (results.length >= args.total) break;
     }
     if (videos.length === 0) {
       process.stderr.write(`    [no results]\n`);

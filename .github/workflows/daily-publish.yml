@@ -115,7 +115,7 @@ jobs:
       - name: Fetch newest YouTube videos
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         run: |
-          node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
+          node scripts/latest-youtube-search.mjs --limit=1 --total=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos found:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
