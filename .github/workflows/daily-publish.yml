@@ -20,7 +20,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
 
     permissions:
       contents: write
@@ -115,7 +115,7 @@ jobs:
       - name: Fetch newest YouTube videos
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         run: |
-          node scripts/latest-youtube-search.mjs --limit=1 --total=1 --output=/tmp/oc-fresh-urls.json
+          node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos found:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
@@ -125,7 +125,7 @@ jobs:
           node scripts/submit-openclips-projects.mjs \
             --input=/tmp/oc-fresh-urls.json \
             --poll-interval=15000 \
-            --timeout=5400000 \
+            --timeout=18000000 \
             --output=/tmp/oc-finished-projects.json
 
       - name: Fetch performance analytics
