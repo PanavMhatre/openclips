@@ -4377,17 +4377,6 @@ async function createCaptionOverlay(text, outputPath) {
   }).join("");
   const CAPTION_GREEN = "#69ff3d";
   const CAPTION_RED = "#ff4444";
-  // Dark pill background behind each caption line
-  const pillPadX = Math.round(18 * VIDEO_SCALE);
-  const pillPadY = Math.round(7 * VIDEO_SCALE_Y);
-  const pillR    = Math.round(10 * VIDEO_SCALE);
-  const pills = lines.map((_, index) => {
-    const py = topPad + index * lineHeight - pillPadY;
-    const ph = lineHeight + pillPadY * 2;
-    const pw = Math.round(VIDEO_WIDTH * 0.88);
-    const px = Math.round((VIDEO_WIDTH - pw) / 2);
-    return `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="${pillR}" ry="${pillR}" fill="#000000" fill-opacity="0.62"/>`;
-  }).join("");
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${VIDEO_WIDTH}" height="${VIDEO_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${VIDEO_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
   <style>
@@ -4397,7 +4386,6 @@ async function createCaptionOverlay(text, outputPath) {
     .company { fill: ${CAPTION_GREEN}; }
     .negative { fill: ${CAPTION_RED}; }
   </style>
-  ${pills}
   ${textNodes}
 </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);
