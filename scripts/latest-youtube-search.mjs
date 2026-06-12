@@ -38,7 +38,7 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const ROSTER_PATH = path.join(ROOT_DIR, "references", "channel-roster.md");
 
 function parseArgs(argv) {
-  const args = { minDuration: 1200, limit: 1, total: 1, output: null };
+  const args = { minDuration: 1200, limit: 1, total: Infinity, output: null };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "min-duration") args.minDuration = Number(val) || 1200;
