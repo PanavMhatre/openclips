@@ -4261,13 +4261,12 @@ function evenOffset(value, max) {
 function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
-  // Anchor text to the bottom of the top zone — right above the face frame
-  const maxBottom = PODCAST_FRAME_Y - Math.round(16 * VIDEO_SCALE_Y);
-  // Base sizes: single line gets 54, two lines 46, three lines 40
-  let hookSize = Math.round((lineCount > 2 ? 40 : lineCount > 1 ? 46 : 54) * VIDEO_SCALE);
-  let hookStroke = Math.round(9 * VIDEO_SCALE);
+  // Place hook in mid-frame zone (30–52%) — below face portrait, clearly visible
+  const minTop    = Math.round(VIDEO_HEIGHT * 0.30);  // ~384px
+  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52);  // ~665px
+  let hookSize = Math.round((lineCount > 2 ? 44 : lineCount > 1 ? 50 : 58) * VIDEO_SCALE);
+  let hookStroke = Math.round(10 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
-  const minTop = Math.round(40 * VIDEO_SCALE_Y);
 
   while (lineCount * lineHeight > maxBottom - minTop && hookSize > 32) {
     hookSize -= 2;
@@ -4275,9 +4274,9 @@ function layoutViralHookLines(lines) {
     lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
   }
 
-  // Bottom-anchor: place block so its bottom sits just above the face
+  // Vertically centre the block within the zone
   const blockHeight = lineCount * lineHeight;
-  const topPad = Math.max(minTop, maxBottom - blockHeight);
+  const topPad = minTop + Math.max(0, Math.floor((maxBottom - minTop - blockHeight) / 2));
 
   return { safeLines, topPad, hookSize, hookStroke, lineHeight };
 }
@@ -4323,11 +4322,11 @@ async function createHookOverlay(hook, _score, outputPath, sourceContext = {}) {
 
 function layoutPodcastCaptionLines(lineCount) {
   const count = Math.max(1, lineCount);
-  // Caption zone: lower body area of the face frame, above where the image card sits
-  const topLimit = Math.round(VIDEO_HEIGHT * 0.53);   // ~679px — mid-lower face
-  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.68); // ~870px — above image card
-  const available = Math.max(Math.round(52 * VIDEO_SCALE_Y), bottomLimit - topLimit);
-  let captionSize = Math.round(52 * VIDEO_SCALE);
+  // Caption zone: below hook (52%), well above image card
+  const topLimit = Math.round(VIDEO_HEIGHT * 0.54);   // ~691px
+  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.70); // ~896px
+  const available = Math.max(Math.round(56 * VIDEO_SCALE_Y), bottomLimit - topLimit);
+  let captionSize = Math.round(56 * VIDEO_SCALE);
   let captionStroke = Math.round(10 * VIDEO_SCALE);
   let lineHeight = Math.round((captionSize + 10) * VIDEO_SCALE_Y);
   const strokePad = () => Math.round(captionStroke * 1.4 + 6 * VIDEO_SCALE_Y);
@@ -4378,15 +4377,27 @@ async function createCaptionOverlay(text, outputPath) {
   }).join("");
   const CAPTION_GREEN = "#69ff3d";
   const CAPTION_RED = "#ff4444";
+  // Dark pill background behind each caption line
+  const pillPadX = Math.round(18 * VIDEO_SCALE);
+  const pillPadY = Math.round(7 * VIDEO_SCALE_Y);
+  const pillR    = Math.round(10 * VIDEO_SCALE);
+  const pills = lines.map((_, index) => {
+    const py = topPad + index * lineHeight - pillPadY;
+    const ph = lineHeight + pillPadY * 2;
+    const pw = Math.round(VIDEO_WIDTH * 0.88);
+    const px = Math.round((VIDEO_WIDTH - pw) / 2);
+    return `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="${pillR}" ry="${pillR}" fill="#000000" fill-opacity="0.62"/>`;
+  }).join("");
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${VIDEO_WIDTH}" height="${VIDEO_HEIGHT}" viewBox="0 0 ${VIDEO_WIDTH} ${VIDEO_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
   <style>
-    .caption { font-family: "Arial Black", Impact, Arial, Helvetica, sans-serif; font-size: ${captionSize}px; font-weight: 950; letter-spacing: 0; paint-order: stroke; stroke: #050505; stroke-width: ${captionStroke}px; stroke-linejoin: round; }
+    .caption { font-family: "Arial Black", Impact, Arial, Helvetica, sans-serif; font-size: ${captionSize}px; font-weight: 950; letter-spacing: 0.5px; paint-order: stroke; stroke: #050505; stroke-width: ${captionStroke}px; stroke-linejoin: round; }
     .plain { fill: #ffffff; }
     .hot { fill: ${CAPTION_YELLOW}; }
     .company { fill: ${CAPTION_GREEN}; }
     .negative { fill: ${CAPTION_RED}; }
   </style>
+  ${pills}
   ${textNodes}
 </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);

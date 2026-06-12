@@ -326,16 +326,43 @@ async function searchPixabay(query, apiKey, count = 5) {
   const url = `https://pixabay.com/api/?key=${apiKey}&q=${q}&image_type=photo&safesearch=true&per_page=${count + 5}&orientation=horizontal&min_width=400`;
   const data = await fetchJson(url);
   if (!data.hits?.length) {
-    // Broaden: try first word only
     const broad = query.split(" ")[0];
     if (broad !== query) {
       const url2 = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(broad)}&image_type=photo&safesearch=true&per_page=${count + 5}&orientation=horizontal&min_width=400`;
       const data2 = await fetchJson(url2);
-      return (data2.hits || []).slice(0, count).map((h) => h.webformatURL);
+      return (data2.hits || []).slice(0, count).map((h) => ({ url: h.webformatURL, type: "image" }));
     }
     return [];
   }
-  return data.hits.slice(0, count).map((h) => h.webformatURL);
+  return data.hits.slice(0, count).map((h) => ({ url: h.webformatURL, type: "image" }));
+}
+
+async function searchPixabayVideo(query, apiKey, count = 3) {
+  const q = encodeURIComponent(query);
+  const url = `https://pixabay.com/api/videos/?key=${apiKey}&q=${q}&per_page=${count + 3}&video_type=all`;
+  try {
+    const data = await fetchJson(url);
+    return (data.hits || [])
+      .slice(0, count)
+      .map((h) => h.videos?.medium?.url || h.videos?.small?.url || h.videos?.tiny?.url)
+      .filter(Boolean)
+      .map((url) => ({ url, type: "video" }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch media for a moment: try video first (for high-importance moments),
+ * fall back to static image.
+ */
+async function fetchMomentMedia(query, apiKey, useVideo = true) {
+  if (useVideo) {
+    const vids = await searchPixabayVideo(query, apiKey, 1);
+    if (vids.length) return vids[0];
+  }
+  const imgs = await searchPixabay(query, apiKey, 1);
+  return imgs[0] || null;
 }
 
 // ── Image download ────────────────────────────────────────────────────────────
@@ -447,28 +474,39 @@ async function findBestPlacement(clipPath, width = 720, height = 1280) {
  * @param {string[]} imgPaths      local paths to downloaded Pixabay images
  * @param {string}   captionFile   path to a pre-rendered caption PNG (undefined → no caption)
  */
-function buildOverlayFilter(clipDuration, imgPaths, captionFile, startTimes = null) {
-  const count        = imgPaths.length;
-  // Use provided start times, or fall back to even spacing
+// mediaTypes: array of "image" | "video" parallel to mediaPaths
+function buildOverlayFilter(clipDuration, mediaPaths, captionFile, startTimes = null, mediaTypes = null) {
+  const count        = mediaPaths.length;
   const gap          = (clipDuration - 2) / count;
   const showDuration = 3.5;
   const defaultStarts = Array.from({ length: count }, (_, i) => 1 + i * gap);
   const times = startTimes && startTimes.length === count ? startTimes : defaultStarts;
+  const types = mediaTypes || mediaPaths.map(() => "image");
   const CARD_W = 380, PAD = 8, FADE = 0.5;
-  const TOTAL_W = CARD_W + PAD * 2;           // 396px
-  const X = Math.round((720 - TOTAL_W) / 2);  // 162 — horizontally centred
-  const CAP_Y  = 700;   // unused (captions now baked in by server)
-  const IMG_Y  = 935;   // image card — midpoint aligned with bottom of face frame (~962px)
+  const TOTAL_W = CARD_W + PAD * 2;
+  const X = Math.round((720 - TOTAL_W) / 2);
+  const CAP_Y  = 700;
+  const IMG_Y  = 935;
   const parts = [];
 
-  // Scale + border each image into a static YUV card.
-  // Pixabay returns RGBA PNG — force rgb24 first so pad operates on 3 channels.
   for (let i = 0; i < count; i++) {
-    parts.push(
-      `[${i + 1}:v]format=rgb24,scale=${CARD_W}:-2,` +
-      `pad=${TOTAL_W}:ih+${PAD * 2}:${PAD}:${PAD}:color=white,` +
-      `format=yuv420p[card${i}]`,
-    );
+    if (types[i] === "video") {
+      // Trim to showDuration, loop if shorter, scale + border
+      parts.push(
+        `[${i + 1}:v]trim=0:${showDuration.toFixed(2)},setpts=PTS-STARTPTS,` +
+        `loop=loop=-1:size=32767:start=0,trim=0:${showDuration.toFixed(2)},setpts=PTS-STARTPTS,` +
+        `format=rgb24,scale=${CARD_W}:-2,` +
+        `pad=${TOTAL_W}:ih+${PAD * 2}:${PAD}:${PAD}:color=white,` +
+        `format=yuv420p[card${i}]`,
+      );
+    } else {
+      // Static image — Pixabay returns RGBA PNG, force rgb24 first
+      parts.push(
+        `[${i + 1}:v]format=rgb24,scale=${CARD_W}:-2,` +
+        `pad=${TOTAL_W}:ih+${PAD * 2}:${PAD}:${PAD}:color=white,` +
+        `format=yuv420p[card${i}]`,
+      );
+    }
   }
 
   // Chain: for each card, split the current video stream, overlay card on one
@@ -492,10 +530,8 @@ function buildOverlayFilter(clipDuration, imgPaths, captionFile, startTimes = nu
     last = out;
   }
 
-  // Caption overlay — ALWAYS visible at fixed CAP_Y, transparent PNG, sits ABOVE the image.
-  // Position never moves regardless of whether an image is currently showing.
   if (captionFile) {
-    const capInputIdx = imgPaths.length + 1;
+    const capInputIdx = mediaPaths.length + 1;
     parts.push(
       `[preCap][${capInputIdx}:v]overlay='(W-w)/2':${CAP_Y}:format=yuv420[vout]`,
     );
@@ -527,121 +563,79 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     return { status: "would-enhance", topic };
   }
 
-  // Step 3: Pixabay search
-  let imageUrls;
-  try {
-    imageUrls = await searchPixabay(topic, apiKey, numImages);
-  } catch (err) {
-    process.stderr.write(`    [warn] Pixabay search failed: ${err.message}\n`);
-    return { status: "error" };
-  }
-
-  if (!imageUrls.length) {
-    process.stderr.write(`    [warn] No images found for "${topic}" — skipping\n`);
-    return { status: "no-images" };
-  }
-  process.stderr.write(`    Found ${imageUrls.length} image(s) on Pixabay\n`);
-
-  // Step 4: download images
-  const tmpDir = path.join(tmpdir(), `oc-enhance-${Date.now()}`);
-  mkdirSync(tmpDir, { recursive: true });
-  const imgPaths = [];
-
-  for (let i = 0; i < imageUrls.length; i++) {
-    const dest = path.join(tmpDir, `img${i}.jpg`);
-    try {
-      await downloadImageFile(imageUrls[i], dest);
-      imgPaths.push(dest);
-    } catch (err) {
-      process.stderr.write(`    [warn] Image ${i + 1} download failed: ${err.message}\n`);
-    }
-  }
-
-  if (!imgPaths.length) {
-    process.stderr.write(`    [warn] All downloads failed — skipping\n`);
-    cleanupTmp(tmpDir, imgPaths);
-    return { status: "error" };
-  }
-
-  // Step 5: probe duration, find important moments, build filter
+  // Step 3: probe duration + find important transcript moments first
   const duration = await getVideoDuration(clipPath);
   if (duration < 8) {
     process.stderr.write(`    [skip] Clip too short (${duration.toFixed(1)}s)\n`);
-    cleanupTmp(tmpDir, imgPaths);
     return { status: "too-short" };
   }
 
-  // Find SRT alongside the clip file
   const srtPath = clipPath.replace(/\.mp4$/, ".srt");
   const moments = findImportantMoments(
     existsSync(srtPath) ? srtPath : null,
     duration,
-    imgPaths.length,
+    numImages,
   );
 
-  // Trim imgPaths to match discovered moments (may be fewer than requested)
-  const usedImgPaths = imgPaths.slice(0, moments.length);
+  // Step 4: fetch one media item per moment — video for important moments, image otherwise
+  const tmpDir = path.join(tmpdir(), `oc-enhance-${Date.now()}`);
+  mkdirSync(tmpDir, { recursive: true });
+  const usedMediaPaths = [];
+  const usedMediaTypes = [];
+  const usedMoments = [];
+
+  for (let i = 0; i < moments.length; i++) {
+    // First moment = highest-importance → try video; subsequent → image
+    const useVideo = i === 0;
+    let media = null;
+    try {
+      media = await fetchMomentMedia(topic, apiKey, useVideo);
+    } catch (err) {
+      process.stderr.write(`    [warn] Media fetch failed: ${err.message}\n`);
+    }
+    if (!media) continue;
+
+    const ext = media.type === "video" ? ".mp4" : ".jpg";
+    const dest = path.join(tmpDir, `media${i}${ext}`);
+    try {
+      await downloadImageFile(media.url, dest);
+      usedMediaPaths.push(dest);
+      usedMediaTypes.push(media.type);
+      usedMoments.push(moments[i]);
+      process.stderr.write(`    Moment @${moments[i].toFixed(1)}s → ${media.type}\n`);
+    } catch (err) {
+      process.stderr.write(`    [warn] Download failed: ${err.message}\n`);
+    }
+  }
+
+  if (!usedMediaPaths.length) {
+    process.stderr.write(`    [warn] No media downloaded — skipping\n`);
+    cleanupTmp(tmpDir, []);
+    return { status: "no-images" };
+  }
 
   // If -orig.mp4 exists, always render from the clean original (never stack overlays)
   const origPath = clipPath.replace(/\.mp4$/, "-orig.mp4");
   const sourcePath = existsSync(origPath) ? origPath : clipPath;
 
-  // Caption disabled — image card only
-  const captionText = (clipMeta.hook || clipMeta.title || topic || "").trim();
-  let captionFile = null;
-  if (false && captionText) {
-    captionFile = path.join(tmpDir, "caption.png");
-    // Word-wrap at ~38 chars per line
-    const words = captionText.split(/\s+/);
-    const MAX_CHARS = 38;
-    const lines = [];
-    let line = "";
-    for (const w of words) {
-      if ((line + " " + w).trim().length > MAX_CHARS && line) {
-        lines.push(line.trim());
-        line = w;
-      } else {
-        line = (line + " " + w).trim();
-      }
-    }
-    if (line) lines.push(line.trim());
-    // ALL CAPS, max 2 lines
-    const captionLabel = lines.slice(0, 2).join("\n").toUpperCase();
+  const captionFile = null; // captions are baked in by server
 
-    // Style: transparent background, white text with dark outline.
-    // Use magick label: with explicit font path — produces GrayscaleAlpha PNG
-    // (white=255, transparent background) which ffmpeg overlay handles correctly.
-    const makeCaptionArgs = (font) => [
-      "-background", "none",
-      "-fill", "white",
-      "-stroke", "#050505",
-      "-strokewidth", "8",
-      "-font", font,
-      "-pointsize", "40",
-      `label:${captionLabel}`,
-      captionFile,
-    ];
-
-    try {
-      await execFileAsync("magick", makeCaptionArgs("/System/Library/Fonts/HelveticaNeue.ttc"), { timeout: 10_000 });
-    } catch {
-      try {
-        await execFileAsync("magick", makeCaptionArgs("/System/Library/Fonts/Helvetica.ttc"), { timeout: 10_000 });
-      } catch (e2) {
-        process.stderr.write(`    [warn] Caption render failed: ${e2.message.slice(0, 120)} — skipping caption\n`);
-        captionFile = null;
-      }
-    }
-  }
-
-  const { filterComplex, mapArgs } = buildOverlayFilter(duration, usedImgPaths, captionFile, moments);
+  const { filterComplex, mapArgs } = buildOverlayFilter(
+    duration, usedMediaPaths, captionFile, usedMoments, usedMediaTypes,
+  );
   const outPath = clipPath.replace(/\.mp4$/, "-enhanced.mp4");
+
+  // Video inputs need -ss 0 to allow trimming; image inputs need -loop 1
+  const mediaInputArgs = usedMediaPaths.flatMap((p, i) =>
+    usedMediaTypes[i] === "video"
+      ? ["-ss", "0", "-i", p]
+      : ["-loop", "1", "-t", String(duration), "-i", p],
+  );
 
   const ffmpegArgs = [
     "-y",
-    "-i", sourcePath,         // input 0: always use original
-    ...usedImgPaths.flatMap((p) => ["-i", p]),  // inputs 1…N: Pixabay images
-    // input N+1: caption PNG, looped for the full clip duration
+    "-i", sourcePath,
+    ...mediaInputArgs,
     ...(captionFile ? ["-loop", "1", "-t", String(duration), "-i", captionFile] : []),
     "-filter_complex", filterComplex,
     ...mapArgs,
@@ -653,29 +647,30 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     outPath,
   ];
 
-  process.stderr.write(`    Rendering ${usedImgPaths.length} overlay(s) at key moments onto ${duration.toFixed(1)}s clip...\n`);
+  const videoCount = usedMediaTypes.filter((t) => t === "video").length;
+  const imageCount = usedMediaTypes.filter((t) => t === "image").length;
+  process.stderr.write(
+    `    Rendering ${usedMediaPaths.length} overlay(s) [${videoCount} video, ${imageCount} image] onto ${duration.toFixed(1)}s clip...\n`,
+  );
   try {
     await execFileAsync("ffmpeg", ffmpegArgs, { timeout: 600_000 });
   } catch (err) {
     process.stderr.write(`    [error] ffmpeg failed:\n${err.stderr?.slice(-800) || err.message.slice(0, 800)}\n`);
-    cleanupTmp(tmpDir, imgPaths);
+    cleanupTmp(tmpDir, usedMediaPaths);
     if (existsSync(outPath)) unlinkSync(outPath);
     return { status: "error" };
   }
 
-  // Step 6: replace the clip in-place (keep -orig as clean backup)
   const { renameSync } = await import("node:fs");
   if (!existsSync(origPath)) {
-    // First time enhancing — back up original
     renameSync(clipPath, origPath);
   } else {
-    // Re-enhancing — remove old enhanced version, keep existing -orig
     unlinkSync(clipPath);
   }
   renameSync(outPath, clipPath);
   process.stderr.write(`    ✓ Enhanced! (clean original kept at ${path.basename(origPath)})\n`);
 
-  cleanupTmp(tmpDir, usedImgPaths, captionFile);
+  cleanupTmp(tmpDir, usedMediaPaths, captionFile);
   return { status: "enhanced", topic };
 }
 
