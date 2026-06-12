@@ -4262,9 +4262,9 @@ function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
   // Place hook in mid-frame zone (30–52%) — below face portrait, clearly visible
-  const minTop    = Math.round(VIDEO_HEIGHT * 0.30);  // ~384px
-  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52);  // ~665px
-  let hookSize = Math.round((lineCount > 2 ? 44 : lineCount > 1 ? 50 : 58) * VIDEO_SCALE);
+  const minTop    = Math.round(VIDEO_HEIGHT * 0.30) - 50;  // ~334px
+  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52) - 50;  // ~615px
+  let hookSize = Math.round((lineCount > 2 ? 50 : lineCount > 1 ? 58 : 66) * VIDEO_SCALE);
   let hookStroke = Math.round(10 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
 
