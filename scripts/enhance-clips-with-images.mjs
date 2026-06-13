@@ -43,6 +43,62 @@ import path from "node:path";
 import https from "node:https";
 import http from "node:http";
 
+// ── Groq search query generation ─────────────────────────────────────────────
+
+function getGroqKey() {
+  const keys = String(process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
+    .split(/[\s,]+/).map(k => k.trim()).filter(Boolean);
+  return keys[Math.floor(Math.random() * keys.length)] || "";
+}
+
+async function generatePixabayQueries(clip) {
+  const key = getGroqKey();
+  if (!key) return null;
+  const hook = clip.hook || "";
+  const title = clip.title || clip._projectTitle || "";
+  const focus = (clip.focus || "").slice(0, 200);
+  const prompt = `Generate 3 specific Pixabay image search queries for a short video clip.
+Hook: ${hook}
+Title: ${title}
+Summary: ${focus}
+
+Rules:
+- Each query should be 1-3 words, concrete and visual (things/places/objects a camera can capture)
+- Good: "stock market crash", "office meeting", "silicon valley startup", "electric car charging"
+- Bad: "interesting discussion", "AI concepts", "podcast moment"
+- Return ONLY a JSON array of 3 strings: ["query1","query2","query3"]`;
+
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 80,
+      temperature: 0.3,
+    });
+    const req = https.request({
+      hostname: "api.groq.com", path: "/openai/v1/chat/completions", method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      timeout: 15000,
+    }, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try {
+          const d = JSON.parse(data);
+          const text = d.choices?.[0]?.message?.content?.trim() || "";
+          const clean = text.replace(/```json?/g, "").replace(/```/g, "").trim();
+          const arr = JSON.parse(clean);
+          if (Array.isArray(arr) && arr.length) resolve(arr.map(String));
+          else resolve(null);
+        } catch { resolve(null); }
+      });
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve(null));
+    req.write(body); req.end();
+  });
+}
+
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -554,9 +610,12 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     if (!faceOnly) return { status: "styled" };
   }
 
-  // Step 2: extract topic
-  const topic = clipMeta.topic || extractKeywords(clipMeta);
-  process.stderr.write(`    Topic: "${topic}"\n`);
+  // Step 2: extract topic — try AI-generated queries first, fall back to keyword extraction
+  const baseTopic = clipMeta.topic || extractKeywords(clipMeta);
+  const aiQueries = await generatePixabayQueries(clipMeta).catch(() => null);
+  const searchQueries = (aiQueries && aiQueries.length) ? aiQueries : [baseTopic];
+  const topic = searchQueries[0];
+  process.stderr.write(`    Topic: "${topic}"${aiQueries ? ` [AI: ${searchQueries.join(" | ")}]` : ""}\n`);
 
   if (dryRun) {
     process.stderr.write(`    [dry-run] Would fetch ${numImages} images for "${topic}"\n`);
@@ -587,9 +646,10 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
   for (let i = 0; i < moments.length; i++) {
     // First moment = highest-importance → try video; subsequent → image
     const useVideo = i === 0;
+    const momentQuery = searchQueries[i % searchQueries.length] || topic;
     let media = null;
     try {
-      media = await fetchMomentMedia(topic, apiKey, useVideo);
+      media = await fetchMomentMedia(momentQuery, apiKey, useVideo);
     } catch (err) {
       process.stderr.write(`    [warn] Media fetch failed: ${err.message}\n`);
     }

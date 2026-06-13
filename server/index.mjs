@@ -121,6 +121,7 @@ app.get("/api/health", async (_req, res) => {
       ytDlp: await commandExists("yt-dlp"),
       groq: hasGroqApiKey(),
       groqKeyCount: getGroqApiKeys().length,
+      nvidia: hasNvidiaApiKey(),
       buffer: Boolean(bufferApiKey()),
       discordStorage: Boolean(discordWebhookUrl()),
       githubStorage: await hasGitHubStorageAuth(),
@@ -1189,9 +1190,14 @@ async function scheduleProjectClipsToBuffer(projectId) {
   const channelIds = await resolveBufferChannelIds();
   const clips = [...project.clips];
 
+  // Generate all captions in parallel across Groq key slots
+  const captionTexts = await Promise.all(
+    clips.map((clip, clipIndex) => resolveBufferPostText(project, clip, null, clipIndex))
+  );
+
   for (let clipIndex = 0; clipIndex < clips.length; clipIndex += 1) {
     const clip = clips[clipIndex];
-    const text = await resolveBufferPostText(project, clip, null);
+    const text = captionTexts[clipIndex];
     let media;
     try {
       media = await resolveBufferMediaUrl(null, project, clip);
@@ -2935,31 +2941,64 @@ RULES:
 Transcript segments:
 ${transcript}`;
 
-  try {
-    const response = await withGroqRetry((client) => client.chat.completions.create({
-      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
+  const nvidiaModel = process.env.OPENCLIPS_NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6";
+
+  const [groqResult, nvidiaResult] = await Promise.allSettled([
+    // Groq clip planning
+    withGroqRetry((client) => client.chat.completions.create({
+      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.35,
       max_tokens: 1600,
       response_format: { type: "json_object" },
-    }), { label: "Groq clip planning", attempts: 3, keySlot });
-    const raw = response.choices?.[0]?.message?.content || "";
-    const parsed = JSON.parse(cleanJson(raw));
-    const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
-    const normalized = clips.map((clip, index) => normalizeCandidate(clip, index, duration, analysisChunks, project)).filter(Boolean);
-    if (!normalized.length) {
-      throw new Error("Groq clip planning returned no valid clips.");
-    }
-    return normalized.slice(0, 8);
-  } catch (error) {
+    }), { label: "Groq clip planning", attempts: 3, keySlot }),
+    // NVIDIA clip planning (parallel — only if key present)
+    hasNvidiaApiKey()
+      ? callNvidiaChat([{ role: "user", content: prompt }], { model: nvidiaModel, maxTokens: 1600, temperature: 0.35, label: "clip planning" })
+      : Promise.reject(new Error("No NVIDIA key")),
+  ]);
+
+  const allCandidates = [];
+
+  if (groqResult.status === "fulfilled") {
+    const raw = groqResult.value.choices?.[0]?.message?.content || "";
     try {
-      const retry = await retryPlanClipsWithoutJsonMode(prompt, duration, analysisChunks, project, keySlot);
-      if (retry.length) return retry;
-    } catch {
-      // Fall through to local planning when Groq returns malformed JSON.
-    }
-    return localClipPlan(segments, duration, project);
+      const parsed = JSON.parse(cleanJson(raw));
+      const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
+      allCandidates.push(...clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean));
+    } catch { /* ignore parse failure — NVIDIA may still have results */ }
   }
+
+  if (nvidiaResult.status === "fulfilled") {
+    const raw = nvidiaResult.value.choices?.[0]?.message?.content || "";
+    try {
+      const parsed = JSON.parse(cleanJson(raw));
+      const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
+      const nvNormalized = clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean);
+      // Only add NVIDIA clips that don't significantly overlap with existing ones
+      for (const nc of nvNormalized) {
+        const overlaps = allCandidates.some((ec) => {
+          const overlapStart = Math.max(ec.start, nc.start);
+          const overlapEnd = Math.min(ec.end, nc.end);
+          const overlap = Math.max(0, overlapEnd - overlapStart);
+          const shorter = Math.min(ec.end - ec.start, nc.end - nc.start);
+          return overlap / shorter > 0.5;
+        });
+        if (!overlaps) allCandidates.push(nc);
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (allCandidates.length > 0) {
+    return allCandidates.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 8);
+  }
+
+  // Fallback chain
+  try {
+    const retry = await retryPlanClipsWithoutJsonMode(prompt, duration, analysisChunks, project, keySlot);
+    if (retry.length) return retry;
+  } catch { /* fall through */ }
+  return localClipPlan(segments, duration, project);
 }
 
 async function retryPlanClipsWithoutJsonMode(prompt, duration, analysisChunks, project, keySlot) {
@@ -4707,6 +4746,41 @@ function escapeXml(value) {
 }
 
 const GROQ_CLIENT_TIMEOUT_MS = 90000;
+// ─── NVIDIA API ───────────────────────────────────────────────────────────────
+
+function getNvidiaApiKey() {
+  return String(process.env.NVIDIA_API_KEY || process.env.OPENCLIPS_NVIDIA_API_KEY || "").trim();
+}
+
+function hasNvidiaApiKey() {
+  return Boolean(getNvidiaApiKey());
+}
+
+async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature = 0.35, label = "NVIDIA" } = {}) {
+  const key = getNvidiaApiKey();
+  if (!key) throw new Error("NVIDIA_API_KEY not set");
+  const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+  try {
+    const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`NVIDIA ${label} HTTP ${res.status}: ${err.slice(0, 200)}`);
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── GROQ KEY MANAGEMENT ──────────────────────────────────────────────────────
+
 let groqKeyRoundRobin = 0;
 let cachedGroqApiKeys = null;
 
