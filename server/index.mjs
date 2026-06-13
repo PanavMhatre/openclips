@@ -1863,9 +1863,7 @@ function composeBufferCaption(project, clip) {
 
 function buildCaptionPrompt(project, clip) {
   const transcript = clipTranscriptExcerpt(clip, 1200);
-  return `You write viral short-form captions for PodByte Edits — a finance/tech podcast clip channel on TikTok, Reels, and YouTube Shorts.
-
-The caption is the #1 factor in whether someone follows after watching. It must make the viewer feel smart for sharing this clip. No filler. No vague lines. Every sentence earns its place.
+  return `You write captions for PodByte Edits — a finance/tech clip channel that turns podcast moments into viral TikTok and Reels content. Your captions drive follows. They make people stop, watch again, and tag someone.
 
 Episode: ${project.title}
 Context:
@@ -1876,13 +1874,28 @@ Clip summary: ${clip.focus || clip.title}
 Transcript (ground truth — only use facts from here):
 ${transcript || "(no transcript available)"}
 
-FIELD RULES:
-- "hook": 4-8 words, ALL CAPS. A bold CLAIM that names the company/person/product. Must be different from the clip title — sharper, more provocative.
-  STRONG: "NVIDIA'S MOAT IS DISAPPEARING" | "OPENAI JUST CHANGED THE RULES" | "THIS IS WHY YOUR 401K IS BROKEN"
-  WEAK: "Big Concerns Today" | "AI and Scale" | "Interesting Podcast Moment"
-- "body": 2-4 sentences, 200-480 characters. Structure: [WHO said WHAT with WHAT specific number or mechanism] → [why it matters to the viewer right now]. Must contain at least one concrete detail (name, number, mechanism) from the transcript. Must NOT repeat any word or phrase from the hook.
-- "cta": one line under 90 characters. Use exactly: "Follow PodByte Edits for daily finance & tech breakdowns."
-- Ground truth rule: only use names, companies, numbers, and events that appear in the transcript. Never invent stats or speakers.
+YOUR GOAL: write a hook so punchy and specific that someone scrolling at 2am stops dead. Then a body that makes them feel like they just got insider information. Then they follow because they don't want to miss the next one.
+
+HOOK RULES — this is the most important field:
+- 4-8 words, ALL CAPS
+- Must name a real person, company, or product from the transcript — never anonymous
+- Must be a PROVOCATION, CONFESSION, or BOMBSHELL — not a description
+- Use charged language: "LIED", "BROKE", "EXPOSED", "NOBODY TELLS YOU", "THEY DON'T WANT YOU TO KNOW", "JUST ADMITTED", "IS OVER", "WILL COLLAPSE"
+- STRONG: "SAM ALTMAN JUST ADMITTED THIS", "ELON LIED ABOUT THIS NUMBER", "APPLE IS QUIETLY LOSING", "THEY'RE HIDING THIS FROM YOU", "YOUR BROKER DOESN'T WANT YOU TO KNOW THIS", "WARREN BUFFETT SAID SELL"
+- WEAK: "Big News", "Interesting Take", "AI Update", "Market Thoughts"
+
+BODY RULES:
+- 3-4 sentences, 250-500 characters
+- Open with WHO said it and the specific claim or number — make it feel like breaking news
+- Second sentence: the mechanism or proof — why this is real and not hype
+- Third sentence: what this means for the viewer personally — their money, their job, their future
+- Use "they", "nobody", "most people don't know" — create an in-group feeling
+- Must contain at least one concrete fact (name, number, date, company) from the transcript
+- Must NOT repeat any word or phrase from the hook
+
+CTA: exactly "Follow PodByte Edits for daily finance & tech breakdowns."
+
+Ground truth: only use names, companies, numbers that appear in the transcript. Never invent.
 
 Return ONLY JSON:
 {"hook":"...","body":"...","cta":"..."}`;
@@ -1900,11 +1913,11 @@ function parseCaptionJson(raw) {
 }
 
 function scoreCaptionHook(hook) {
-  // Prefer hooks with named entities (companies, people) and specific language
-  const named = /\b(apple|google|meta|openai|nvidia|tesla|amazon|microsoft|sam|elon|trump|fed|china|gpt|ai)\b/i.test(hook);
+  const named = /\b(apple|google|meta|openai|nvidia|tesla|amazon|microsoft|sam altman|elon|trump|fed|china|gpt|warren|buffett|jpmorgan|blackrock|anthropic|zuckerberg|powell|yellen|softbank|sequoia|a16z)\b/i.test(hook);
   const hasNumber = /\d/.test(hook);
+  const charged = /\b(lied|broke|exposed|admitted|collapse|collapsing|dying|over|hidden|hiding|nobody|they don't|won't tell|secret|crash|banned|fired|arrested|quit|scam|fraud|fake|rigged)\b/i.test(hook);
   const words = hook.trim().split(/\s+/).length;
-  return (named ? 3 : 0) + (hasNumber ? 2 : 0) + (words >= 4 && words <= 7 ? 1 : 0);
+  return (named ? 4 : 0) + (charged ? 3 : 0) + (hasNumber ? 2 : 0) + (words >= 4 && words <= 7 ? 1 : 0);
 }
 
 function pickBestCaption(a, b) {
@@ -2973,9 +2986,9 @@ RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end se
 
 FIELD RULES:
 - "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
-- "hook": 4-8 UPPERCASE words for the on-screen text. Bold factual CLAIM, not a description. Name the company/person/product.
-  STRONG: "ELON JUST BROKE THIS RULE" | "OPENAI'S REAL BOTTLENECK REVEALED" | "TESLA'S MATH DOESN'T WORK" | "NVIDIA'S MOAT IS DISAPPEARING"
-  WEAK: "Podcast Moment" | "AI and Scale" | "Revenue Performance" | "Big News Today"
+- "hook": 4-8 UPPERCASE words for the on-screen text. Must be a PROVOCATION or BOMBSHELL that names the real person/company. Use charged words: LIED, BROKE, EXPOSED, ADMITTED, COLLAPSE, OVER, NOBODY KNOWS, THEY HID THIS.
+  STRONG: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THIS NUMBER" | "APPLE IS QUIETLY DYING" | "THEY'RE HIDING THIS FROM YOU" | "OPENAI IS ABOUT TO COLLAPSE" | "NOBODY TELLS YOU THIS"
+  WEAK: "Podcast Moment" | "AI and Scale" | "Revenue Performance" | "Big News Today" | "Interesting Insight"
 - "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
 - "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
 - "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
@@ -4345,8 +4358,8 @@ function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
   // Place hook in mid-frame zone (30–52%) — below face portrait, clearly visible
-  const minTop    = Math.round(VIDEO_HEIGHT * 0.30) - 50;  // ~334px
-  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52) - 50;  // ~615px
+  const minTop    = Math.round(VIDEO_HEIGHT * 0.30) - 110;  // ~274px
+  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52) - 110;  // ~555px
   let hookSize = Math.round((lineCount > 2 ? 50 : lineCount > 1 ? 58 : 66) * VIDEO_SCALE);
   let hookStroke = Math.round(10 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
@@ -4406,8 +4419,8 @@ async function createHookOverlay(hook, _score, outputPath, sourceContext = {}) {
 function layoutPodcastCaptionLines(lineCount) {
   const count = Math.max(1, lineCount);
   // Caption zone: below hook (52%), well above image card
-  const topLimit = Math.round(VIDEO_HEIGHT * 0.54);   // ~691px
-  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.70); // ~896px
+  const topLimit = Math.round(VIDEO_HEIGHT * 0.54) + 25;   // ~716px
+  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.70) + 25; // ~921px
   const available = Math.max(Math.round(56 * VIDEO_SCALE_Y), bottomLimit - topLimit);
   let captionSize = Math.round(56 * VIDEO_SCALE);
   let captionStroke = Math.round(10 * VIDEO_SCALE);
