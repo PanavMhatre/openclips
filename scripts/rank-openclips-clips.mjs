@@ -32,6 +32,77 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import path from "node:path";
+import https from "node:https";
+
+// ── AI final ranking via gpt-oss-120b ────────────────────────────────────────
+
+function getGroqKey() {
+  const keys = String(process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
+    .split(/[\s,]+/).map(k => k.trim()).filter(Boolean);
+  return keys[Math.floor(Math.random() * keys.length)] || "";
+}
+
+async function aiRankClips(candidates, topN) {
+  const key = getGroqKey();
+  if (!key) return null;
+
+  const list = candidates.slice(0, 20).map((c, i) => (
+    `[${i}] hook: "${c.hook || c.title}" | title: "${c.title}" | duration: ${Math.round(c.duration||0)}s | focus: "${(c.focus||"").slice(0,120)}"`
+  )).join("\n");
+
+  const prompt = `You are the final editor for PodByte Edits — a finance/tech podcast clip channel. Your job: pick the ${topN} clips that will get the most shares, follows, and replays on TikTok and Reels. The channel's reputation depends on only posting clips that make viewers feel smart for watching.
+
+CANDIDATES:
+${list}
+
+WHAT WINS: clips with a named company/person, a specific number or mechanism, and a clear conclusion or verdict. The viewer finishes the clip knowing something they didn't before and wants to tell someone.
+
+WHAT LOSES — immediately deprioritize any clip that:
+- Has a vague hook (could describe any podcast)
+- Ends mid-thought without a payoff
+- Is about a topic already covered by a higher-scoring clip (pick the better one, skip the duplicate)
+- Is under 18 seconds (too short to land) or over 58 seconds (retention collapses)
+- Reads like an intro, outro, or filler moment
+
+TOPIC DIVERSITY IS REQUIRED: do not select more than 2 clips on the same subject. Spread across companies, themes, and angles. A viewer who watches all 8 should feel like they got a full briefing.
+
+Return ONLY a JSON array of exactly ${topN} indices ranked best first. No explanation.
+Example: [3,7,1,0,12,5,9,2]`;
+
+  return new Promise((resolve) => {
+    const body = JSON.stringify({
+      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "openai/gpt-oss-120b",
+      messages: [{ role: "user", content: prompt }],
+      max_completion_tokens: 200,
+      temperature: 1,
+      reasoning_effort: "high",
+      stream: false,
+    });
+    const req = https.request({
+      hostname: "api.groq.com", path: "/openai/v1/chat/completions", method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+      timeout: 45000,
+    }, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try {
+          const d = JSON.parse(data);
+          const text = (d.choices?.[0]?.message?.content || "").trim();
+          const clean = text.replace(/```json?/g,"").replace(/```/g,"").trim();
+          const s = clean.indexOf("["), e = clean.lastIndexOf("]");
+          const indices = JSON.parse(clean.slice(s, e+1));
+          if (!Array.isArray(indices) || !indices.length) return resolve(null);
+          process.stderr.write(`[ai-ranker] gpt-oss-120b selected indices: ${indices.join(",")}\n`);
+          resolve(indices.map(Number).filter(i => Number.isFinite(i) && i >= 0 && i < candidates.length));
+        } catch { resolve(null); }
+      });
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve(null));
+    req.write(body); req.end();
+  });
+}
 
 // ── Performance signals (written by fetch-performance-analytics.mjs) ─────────
 function loadPerformanceSignals() {
@@ -370,7 +441,17 @@ async function main() {
     .map((clip) => ({ ...clip, _score: scoreClip(clip) }))
     .sort((a, b) => b._score - a._score);
 
-  const top = scored.slice(0, args.top);
+  // AI final ranking: send top 20 to gpt-oss-120b, let it pick the best N
+  let top;
+  const candidates = scored.slice(0, 20);
+  const aiIndices = await aiRankClips(candidates, args.top);
+  if (aiIndices && aiIndices.length >= args.top) {
+    top = aiIndices.slice(0, args.top).map(i => candidates[i]);
+    process.stderr.write(`[ai-ranker] Using AI selection (${top.length} clips)\n`);
+  } else {
+    top = scored.slice(0, args.top);
+    process.stderr.write(`[ai-ranker] Falling back to score-sorted selection\n`);
+  }
 
   process.stderr.write(`Ranked ${clips.length} clip(s). Top ${top.length}:\n`);
   for (let i = 0; i < top.length; i++) {

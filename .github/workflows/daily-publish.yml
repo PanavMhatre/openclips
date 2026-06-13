@@ -29,6 +29,7 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
       NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
+      NVIDIA_DEEPSEEK_API_KEYS: ${{ secrets.NVIDIA_DEEPSEEK_API_KEYS }}
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_CHANNEL_IDS }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -42,7 +43,7 @@ jobs:
       BUFFER_CHANNEL_EXCLUDE: clipvltdaily,clipvlt
       PORT: 3000
       OPENCLIPS_GROQ_CHAT_MODEL: openai/gpt-oss-120b
-      OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3
+      OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
       # Keep clips local so enhance script can process them
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
 

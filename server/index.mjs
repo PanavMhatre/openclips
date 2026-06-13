@@ -1861,12 +1861,11 @@ function composeBufferCaption(project, clip) {
   return cleanBufferPostText([hook, body, cta, bufferCaptionTags(project, clip)].filter(Boolean).join("\n\n"));
 }
 
-async function generateBufferCaptionWithGroq(project, clip, keySlot) {
-  requireGroqApiKeys();
+function buildCaptionPrompt(project, clip) {
   const transcript = clipTranscriptExcerpt(clip, 1200);
-  const prompt = `You write viral short-form captions for PodByte Edits (finance/tech podcast clips on TikTok, Reels, and YouTube Shorts).
+  return `You write viral short-form captions for PodByte Edits — a finance/tech podcast clip channel on TikTok, Reels, and YouTube Shorts.
 
-THIS IS CRITICAL FOR GROWTH. Maximize watch time, saves, shares, and follows. No filler. No duplicate lines. Every word must earn attention.
+The caption is the #1 factor in whether someone follows after watching. It must make the viewer feel smart for sharing this clip. No filler. No vague lines. Every sentence earns its place.
 
 Episode: ${project.title}
 Context:
@@ -1877,35 +1876,81 @@ Clip summary: ${clip.focus || clip.title}
 Transcript (ground truth — only use facts from here):
 ${transcript || "(no transcript available)"}
 
-Rules:
-- "hook": 4-7 words, ALL CAPS, scroll-stopping claim. Name the company/person/product. Never generic ("Big Concerns", "AI and Scale"). Must NOT repeat the clip title verbatim.
-- "body": 2-3 sentences, 150-340 characters. WHO said WHAT, include a specific number/mechanism from the transcript, and why the viewer should care. Must add NEW info vs the hook — zero repeated phrases or overlapping words.
-- "cta": one short follow line under 90 characters. Use exactly: "Follow PodByte Edits for daily finance & tech breakdowns."
-- Only mention people, companies, and numbers explicitly supported by the transcript. Do not hallucinate hosts, guests, or stats.
+FIELD RULES:
+- "hook": 4-8 words, ALL CAPS. A bold CLAIM that names the company/person/product. Must be different from the clip title — sharper, more provocative.
+  STRONG: "NVIDIA'S MOAT IS DISAPPEARING" | "OPENAI JUST CHANGED THE RULES" | "THIS IS WHY YOUR 401K IS BROKEN"
+  WEAK: "Big Concerns Today" | "AI and Scale" | "Interesting Podcast Moment"
+- "body": 2-4 sentences, 200-480 characters. Structure: [WHO said WHAT with WHAT specific number or mechanism] → [why it matters to the viewer right now]. Must contain at least one concrete detail (name, number, mechanism) from the transcript. Must NOT repeat any word or phrase from the hook.
+- "cta": one line under 90 characters. Use exactly: "Follow PodByte Edits for daily finance & tech breakdowns."
+- Ground truth rule: only use names, companies, numbers, and events that appear in the transcript. Never invent stats or speakers.
 
 Return ONLY JSON:
 {"hook":"...","body":"...","cta":"..."}`;
+}
 
-  const _captionModel = groqChatModel();
-  const response = await withGroqRetry((client) => client.chat.completions.create({
-    messages: [{ role: "user", content: prompt }],
-    ...groqChatParams(_captionModel, { maxTokens: 420, temperature: 0.35, responseFormat: { type: "json_object" } }),
-  }), { label: "Groq buffer caption", attempts: 2, keySlot });
-
-  const parsed = JSON.parse(cleanJson(response.choices?.[0]?.message?.content || "{}"));
+function parseCaptionJson(raw) {
+  const parsed = JSON.parse(cleanJson(raw || "{}"));
   const hook = cleanHookText(parsed.hook || "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.toUpperCase())
-    .join(" ")
-    .slice(0, 72);
-  let body = String(parsed.body || "").replace(/\s+/g, " ").trim().slice(0, 480);
+    .split(/\s+/).filter(Boolean).map((w) => w.toUpperCase()).join(" ").slice(0, 72);
+  let body = String(parsed.body || "").replace(/\s+/g, " ").trim().slice(0, 600);
   body = dedupeCaptionBodyFromHook(hook, body);
   const cta = String(parsed.cta || "Follow PodByte Edits for daily finance & tech breakdowns.").trim().slice(0, 120);
-  if (!hook || body.length < 40 || captionOverlapRatio(hook, body) >= 0.5) {
-    return composeBufferCaption(project, clip);
+  if (!hook || body.length < 40 || captionOverlapRatio(hook, body) >= 0.5) return null;
+  return { hook, body, cta };
+}
+
+function scoreCaptionHook(hook) {
+  // Prefer hooks with named entities (companies, people) and specific language
+  const named = /\b(apple|google|meta|openai|nvidia|tesla|amazon|microsoft|sam|elon|trump|fed|china|gpt|ai)\b/i.test(hook);
+  const hasNumber = /\d/.test(hook);
+  const words = hook.trim().split(/\s+/).length;
+  return (named ? 3 : 0) + (hasNumber ? 2 : 0) + (words >= 4 && words <= 7 ? 1 : 0);
+}
+
+function pickBestCaption(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return scoreCaptionHook(a.hook) >= scoreCaptionHook(b.hook) ? a : b;
+}
+
+async function generateBufferCaptionWithGroq(project, clip, keySlot) {
+  requireGroqApiKeys();
+  const prompt = buildCaptionPrompt(project, clip);
+
+  // Run Groq gpt-oss-120b + Kimi K2.6 (backup key pool) in parallel
+  const [groqResult, kimiResult] = await Promise.allSettled([
+    withGroqRetry((client) => client.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      ...groqChatParams(groqChatModel(), { maxTokens: 600, temperature: 0.35, responseFormat: { type: "json_object" } }),
+    }), { label: "Groq buffer caption", attempts: 2, keySlot }),
+    hasDeepSeekApiKey()
+      ? callNvidiaChat([{ role: "user", content: prompt }], {
+          model: process.env.OPENCLIPS_NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6",
+          maxTokens: 600,
+          temperature: 0.35,
+          label: "Kimi buffer caption",
+          keySlot,
+          keyPool: getDeepSeekApiKeys(),
+        })
+      : Promise.reject(new Error("No backup key")),
+  ]);
+
+  const groqCaption = groqResult.status === "fulfilled"
+    ? parseCaptionJson(groqResult.value.choices?.[0]?.message?.content)
+    : null;
+  const kimiCaption = kimiResult.status === "fulfilled"
+    ? parseCaptionJson(kimiResult.value.choices?.[0]?.message?.content)
+    : null;
+
+  const best = pickBestCaption(groqCaption, kimiCaption);
+  if (!best) return composeBufferCaption(project, clip);
+
+  if (groqCaption && kimiCaption) {
+    const winner = best === groqCaption ? "Groq" : "Kimi";
+    process.stderr.write(`[caption] ${winner} hook won: "${best.hook}"\n`);
   }
-  return cleanBufferPostText([hook, body, cta, bufferCaptionTags(project, clip)].join("\n\n"));
+
+  return cleanBufferPostText([best.hook, best.body, best.cta, bufferCaptionTags(project, clip)].join("\n\n"));
 }
 
 async function resolveBufferPostText(project, clip, req, keySlot) {
@@ -2898,7 +2943,7 @@ async function planClips({ project, segments, duration, keySlot } = {}) {
 
   const analysisChunks = transcriptChunksForAnalysis(segments, project.clipLength);
   const transcript = compactTranscriptForPrompt(analysisChunks);
-  const prompt = `You are OpenClips — a viral short-form clip editor. Your only job is finding moments that will stop someone mid-scroll, get replayed, and shared.
+  const prompt = `You are OpenClips — a viral short-form clip editor for PodByte Edits, a finance/tech channel on TikTok, Reels, and YouTube Shorts. Your only job: find moments that stop a scroll, get replayed, and get shared by someone who wants to look smart for sharing it.
 
 Source title: ${project.title}
 Podcast context:
@@ -2907,69 +2952,64 @@ User notes: ${project.prompt || "Find the most viral podcast moments for TikTok,
 Preferred length: ${project.clipLength}
 Video duration: ${duration.toFixed(1)} seconds
 
-VIRAL SELECTION CRITERIA — pick clips that have one or more of these:
-1. SHOCKING CLAIM — a number, fact, or statement that makes you say "wait, really?"
-2. COUNTER-INTUITIVE FLIP — the conventional wisdom is wrong and the speaker proves it
-3. EMOTIONAL PEAK — genuine frustration, disbelief, laughter, fear, or passion in the voice
-4. CONCRETE LESSON — a specific mechanism or cause/effect a viewer can immediately use or repeat
-5. IDENTITY TRIGGER — something that makes a 20-35 year old feel seen ("the system is rigged", "nobody tells you this", "this is why you're broke")
-6. CLIFFHANGER — ends on an unresolved tension that makes people want to know more
-7. QUOTABLE ONE-LINER — a sentence someone would screenshot and share
-8. PAYOFF CLIP — clip has a clear conclusion: "so that means X" or "that's why Y will happen" — these get shared because they give an answer
+WHAT MAKES A CLIP GO VIRAL ON FINANCE/TECH TIKTOK:
+1. SHOCKING CLAIM WITH PROOF — not just "X is overvalued" but the specific mechanism: "Tesla's $1.2T valuation assumes they capture 40% of a robotaxi market that doesn't exist yet"
+2. COUNTER-INTUITIVE FLIP — the thing everyone believes is demonstrably wrong, and you can prove it in 30 seconds
+3. NAMED VILLAIN OR HERO — clips with a specific company, person, or product beat generic clips 3x. "OpenAI", "Nvidia", "Sam Altman" — not "an AI company"
+4. NUMBER THAT REFRAMES — not just a big number, but one that changes how you see something. "$200B written off in one quarter" lands; "$200B revenue" doesn't
+5. CONCRETE PREDICTION — "by Q3 this will happen and here's why" — viewers share predictions because they want to be right
+6. INSIDER MECHANIC — something that happens behind the scenes that most people don't know. The "how it actually works" clip
+7. EMOTIONAL PEAK — genuine frustration, disbelief, or shock in the voice — not performed, actually felt
+8. CLEAN PAYOFF — setup + punchline + consequence. Clips that end on an open question tank retention; clips with a verdict get shared
 
-RULES:
-- Return 5 to 8 clips. Ruthlessly rank by virality potential, not importance to the episode.
-- ONLY pick complete moments: the setup, the punchline/reveal, and ideally a short reaction. Do NOT clip mid-sentence.
-- STRONGLY prefer clips that END with a conclusion, verdict, or prediction — not clips that just raise a question.
-- NEVER pick a clip because it has a big number — the number must cause an emotion or flip a belief.
-- Clip length: 15-55 seconds. The sweet spot for TikTok/Reels retention is 22-45 sec.
-- Scan the ENTIRE video. Most viral moments happen in the middle or end, not the intro.
-- "title": 5-9 words that describe the lesson, not the topic. Bad: "Revenue and Growth". Good: "Why Investors Get Burned Every Time".
-- "hook": 4-8 UPPERCASE words that appear on screen. Must be a bold CLAIM — not a description. ALWAYS name the company, person, or product when known.
-  GOOD hooks: "ELON JUST BROKE THIS RULE", "OPENAI'S REAL BOTTLENECK REVEALED", "WHY APPLE IS QUIETLY LOSING", "TESLA'S MATH DOESN'T WORK"
-  BAD hooks: "Podcast Moment", "AI and Scale", "Revenue Performance", "100 Million Travelers"
-- "focus": 2-3 sentences for the social caption body. WHO said WHAT, the specific mechanism/number, and WHY the viewer should care. This is NOT the on-screen hook — it must add new detail and must NOT repeat hook phrases.
-- "reasoning": internal note on why this clip will perform — NEVER paste this into captions. Do NOT write "why this will stop someone scrolling" or other placeholders.
-- CAPTION QUALITY IS CRITICAL: we are building a follow-worthy channel. Every clip needs maximum hook power + an in-depth explanation. No duplicate lines between hook and focus.
+HARD REJECTION CRITERIA — never pick a clip that:
+- Ends mid-thought or mid-sentence (no payoff = no shares)
+- Is pure definitions or explanation with no stakes or surprise
+- Has a hook that could apply to any podcast ("interesting insight", "great point")
+- Is a filler moment: intros, housekeeping, "that's a great question"
+- Scores below 72 on your internal quality scale — if you can't find 8 clips above 72, pick fewer but maintain quality
+
+RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end sections — that's where the best material hides. Ruthlessly rank by viral potential, not by order in the episode.
+
+FIELD RULES:
+- "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
+- "hook": 4-8 UPPERCASE words for the on-screen text. Bold factual CLAIM, not a description. Name the company/person/product.
+  STRONG: "ELON JUST BROKE THIS RULE" | "OPENAI'S REAL BOTTLENECK REVEALED" | "TESLA'S MATH DOESN'T WORK" | "NVIDIA'S MOAT IS DISAPPEARING"
+  WEAK: "Podcast Moment" | "AI and Scale" | "Revenue Performance" | "Big News Today"
+- "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
+- "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
+- "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
+- "reasoning": internal note — why this clip will get shares and follows specifically. Do not write generic placeholders.
 - Return ONLY JSON:
-{"clips":[{"chunk":1,"start":0,"end":30,"title":"Why Tesla's Valuation Math Breaks","hook":"TESLA'S MATH DOESN'T WORK","focus":"Brandon van der Kolk walks through why Tesla's $1.2T price assumes robotaxi scale the auto business can't support yet — and what that means if you're holding the stock.","score":84,"emotion":"shock","reasoning":"Shocking valuation claim + concrete payoff; strong disbelief emotion for finance audience."}]}
+{"clips":[{"chunk":1,"start":0,"end":30,"title":"Why Tesla's Valuation Math Breaks","hook":"TESLA'S MATH DOESN'T WORK","focus":"Brandon van der Kolk explains why Tesla's $1.2T valuation requires capturing 40% of a robotaxi market that hasn't materialized — and why that math collapses the moment competition scales.","score":87,"emotion":"shock","reasoning":"Named company + specific mechanism + payoff conclusion. Finance audience will share this to look informed."}]}
 
 Transcript segments:
 ${transcript}`;
 
   const nvidiaModel = process.env.OPENCLIPS_NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6";
 
-  const [groqResult, nvidiaResult] = await Promise.allSettled([
-    // Groq clip planning
+  const [groqResult, kimiResult] = await Promise.allSettled([
+    // Groq — gpt-oss-120b reasoning
     withGroqRetry((client) => client.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
-      ...groqChatParams(groqChatModel(), { maxTokens: 1600, temperature: 0.35, responseFormat: { type: "json_object" } }),
+      ...groqChatParams(groqChatModel(), { maxTokens: 3200, temperature: 0.35, responseFormat: { type: "json_object" } }),
     }), { label: "Groq clip planning", attempts: 3, keySlot }),
-    // NVIDIA clip planning (parallel — only if key present)
+    // NVIDIA — Kimi K2.6 (primary 6 keys)
     hasNvidiaApiKey()
-      ? callNvidiaChat([{ role: "user", content: prompt }], { model: nvidiaModel, maxTokens: 1600, temperature: 0.35, label: "clip planning", keySlot })
+      ? callNvidiaChat([{ role: "user", content: prompt }], { model: nvidiaModel, maxTokens: 3200, temperature: 0.35, label: "Kimi clip planning", keySlot })
       : Promise.reject(new Error("No NVIDIA key")),
   ]);
 
   const allCandidates = [];
 
-  if (groqResult.status === "fulfilled") {
-    const raw = groqResult.value.choices?.[0]?.message?.content || "";
+  function mergeNormalized(result, label) {
+    if (result.status !== "fulfilled") return;
+    const raw = result.value.choices?.[0]?.message?.content || "";
     try {
       const parsed = JSON.parse(cleanJson(raw));
       const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
-      allCandidates.push(...clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean));
-    } catch { /* ignore parse failure — NVIDIA may still have results */ }
-  }
-
-  if (nvidiaResult.status === "fulfilled") {
-    const raw = nvidiaResult.value.choices?.[0]?.message?.content || "";
-    try {
-      const parsed = JSON.parse(cleanJson(raw));
-      const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
-      const nvNormalized = clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean);
-      // Only add NVIDIA clips that don't significantly overlap with existing ones
-      for (const nc of nvNormalized) {
+      const normalized = clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean);
+      for (const nc of normalized) {
         const overlaps = allCandidates.some((ec) => {
           const overlapStart = Math.max(ec.start, nc.start);
           const overlapEnd = Math.min(ec.end, nc.end);
@@ -2979,8 +3019,21 @@ ${transcript}`;
         });
         if (!overlaps) allCandidates.push(nc);
       }
+      process.stderr.write(`[planClips] ${label}: ${normalized.length} clips (${allCandidates.length} total after merge)\n`);
+    } catch { /* ignore parse failure */ }
+  }
+
+  // Groq goes first — its clips are the dedup baseline
+  if (groqResult.status === "fulfilled") {
+    const raw = groqResult.value.choices?.[0]?.message?.content || "";
+    try {
+      const parsed = JSON.parse(cleanJson(raw));
+      const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
+      allCandidates.push(...clips.map((c, i) => normalizeCandidate(c, i, duration, analysisChunks, project)).filter(Boolean));
+      process.stderr.write(`[planClips] Groq gpt-oss-120b: ${allCandidates.length} clips\n`);
     } catch { /* ignore */ }
   }
+  mergeNormalized(kimiResult, "NVIDIA Kimi K2.6");
 
   if (allCandidates.length > 0) {
     return allCandidates.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 8);
@@ -4764,6 +4817,23 @@ function hasNvidiaApiKey() {
   return getNvidiaApiKeys().length > 0;
 }
 
+// DeepSeek key pool — separate from Kimi to avoid shared rate limits
+let cachedDeepSeekApiKeys = null;
+function getDeepSeekApiKeys() {
+  if (cachedDeepSeekApiKeys) return cachedDeepSeekApiKeys;
+  const keys = [];
+  const seen = new Set();
+  const addKeys = (raw) => String(raw || "").split(/[\s,]+/).map(k => k.trim()).filter(Boolean)
+    .forEach(k => { if (!seen.has(k)) { seen.add(k); keys.push(k); } });
+  addKeys(process.env.NVIDIA_DEEPSEEK_API_KEYS);
+  addKeys(process.env.NVIDIA_DEEPSEEK_API_KEY);
+  // Fallback to general NVIDIA pool only if no dedicated keys
+  if (!keys.length) addKeys(process.env.NVIDIA_API_KEYS);
+  cachedDeepSeekApiKeys = keys;
+  return keys;
+}
+function hasDeepSeekApiKey() { return getDeepSeekApiKeys().length > 0; }
+
 function nvidiaKeyForSlot(slot) {
   const keys = getNvidiaApiKeys();
   if (!keys.length) return null;
@@ -4773,10 +4843,13 @@ function nvidiaKeyForSlot(slot) {
   return keys[offset % keys.length];
 }
 
-async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature = 0.35, label = "NVIDIA", keySlot, attempts = 3 } = {}) {
-  const keys = getNvidiaApiKeys();
+async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature = 0.35, topP, extraBody, label = "NVIDIA", keySlot, keyPool, attempts = 3, timeoutMs = 180000 } = {}) {
+  const keys = keyPool || getNvidiaApiKeys();
   if (!keys.length) throw new Error("NVIDIA_API_KEYS not set");
-  const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false });
+  const payload = { model, messages, max_tokens: maxTokens, temperature, stream: false };
+  if (topP != null) payload.top_p = topP;
+  if (extraBody) Object.assign(payload, extraBody);
+  const body = JSON.stringify(payload);
   let lastError;
   const baseOffset = keySlot != null && Number.isFinite(Number(keySlot))
     ? Math.abs(Number(keySlot)) % keys.length
@@ -4785,7 +4858,7 @@ async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature =
   for (let attempt = 0; attempt < attempts; attempt++) {
     const key = keys[(baseOffset + attempt) % keys.length];
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
