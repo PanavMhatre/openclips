@@ -41,7 +41,7 @@ jobs:
       BUFFER_CHANNEL_INCLUDE: podbyteedits,podbyte
       BUFFER_CHANNEL_EXCLUDE: clipvltdaily,clipvlt
       PORT: 3000
-      OPENCLIPS_GROQ_CHAT_MODEL: llama-3.3-70b-versatile
+      OPENCLIPS_GROQ_CHAT_MODEL: openai/gpt-oss-120b
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3
       # Keep clips local so enhance script can process them
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"

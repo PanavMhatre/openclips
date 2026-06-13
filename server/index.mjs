@@ -1886,12 +1886,10 @@ Rules:
 Return ONLY JSON:
 {"hook":"...","body":"...","cta":"..."}`;
 
+  const _captionModel = groqChatModel();
   const response = await withGroqRetry((client) => client.chat.completions.create({
-    model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.35,
-    max_tokens: 420,
-    response_format: { type: "json_object" },
+    ...groqChatParams(_captionModel, { maxTokens: 420, temperature: 0.35, responseFormat: { type: "json_object" } }),
   }), { label: "Groq buffer caption", attempts: 2, keySlot });
 
   const parsed = JSON.parse(cleanJson(response.choices?.[0]?.message?.content || "{}"));
@@ -2805,12 +2803,10 @@ ${transcript}
 Return ONLY JSON:
 {"channel":"podcast or YouTube channel","guest":"main guest or speaker if clear","topic":"the specific claim or lesson being made (not just the topic area)","contextLine":"who is making what claim, 3-8 words","hookAngle":"the tension, counter-intuitive flip, or shocking claim that makes this shareable — what will stop someone mid-scroll?"}`;
 
+  const _ctxModel = groqChatModel();
   const response = await withGroqRetry((client) => client.chat.completions.create({
-    model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.12,
-    max_tokens: 420,
-    response_format: { type: "json_object" },
+    ...groqChatParams(_ctxModel, { maxTokens: 420, temperature: 0.12, responseFormat: { type: "json_object" } }),
   }), { label: "Groq podcast context", attempts: 2, keySlot });
 
   const parsed = JSON.parse(cleanJson(response.choices?.[0]?.message?.content || "{}"));
@@ -2946,11 +2942,8 @@ ${transcript}`;
   const [groqResult, nvidiaResult] = await Promise.allSettled([
     // Groq clip planning
     withGroqRetry((client) => client.chat.completions.create({
-      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.35,
-      max_tokens: 1600,
-      response_format: { type: "json_object" },
+      ...groqChatParams(groqChatModel(), { maxTokens: 1600, temperature: 0.35, responseFormat: { type: "json_object" } }),
     }), { label: "Groq clip planning", attempts: 3, keySlot }),
     // NVIDIA clip planning (parallel — only if key present)
     hasNvidiaApiKey()
@@ -3003,10 +2996,8 @@ ${transcript}`;
 
 async function retryPlanClipsWithoutJsonMode(prompt, duration, analysisChunks, project, keySlot) {
   const response = await withGroqRetry((client) => client.chat.completions.create({
-    model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.2,
-    max_tokens: 1200,
+    ...groqChatParams(groqChatModel(), { maxTokens: 1200, temperature: 0.2 }),
   }), { label: "Groq clip planning retry", attempts: 3, keySlot });
   const raw = response.choices?.[0]?.message?.content || "";
   const parsed = JSON.parse(cleanJson(raw));
@@ -4851,6 +4842,31 @@ function hasGroqApiKey() {
   return getGroqApiKeys().length > 0;
 }
 
+// Returns the configured chat model ID
+function groqChatModel() {
+  return process.env.OPENCLIPS_GROQ_CHAT_MODEL || "openai/gpt-oss-120b";
+}
+
+// Reasoning models need reasoning_effort + max_completion_tokens instead of max_tokens
+const REASONING_MODELS = new Set(["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+function isReasoningModel(model) {
+  return REASONING_MODELS.has(model);
+}
+
+// Build the right completion params for any model
+function groqChatParams(model, { maxTokens = 1600, temperature = 0.35, reasoningEffort = "medium", responseFormat } = {}) {
+  const reasoning = isReasoningModel(model);
+  const params = {
+    model,
+    temperature: reasoning ? 1 : temperature,
+    ...(reasoning
+      ? { max_completion_tokens: maxTokens, reasoning_effort: reasoningEffort }
+      : { max_tokens: maxTokens }),
+  };
+  if (responseFormat && !reasoning) params.response_format = responseFormat;
+  return params;
+}
+
 function groqAiModeLabel() {
   const count = getGroqApiKeys().length;
   return count > 1 ? `Groq (${count} keys)` : "Groq";
@@ -5179,12 +5195,10 @@ ${transcript}
 Return ONLY JSON:
 {"teams":"Team A vs Team B or empty","sport":"${sport}","event":"game or tournament name if clear","contextLine":"short 3-6 word context","hookAngle":"what makes this game compelling"}`;
 
+  const _sportsCtxModel = groqChatModel();
   const response = await withGroqRetry((client) => client.chat.completions.create({
-    model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.12,
-    max_tokens: 300,
-    response_format: { type: "json_object" },
+    ...groqChatParams(_sportsCtxModel, { maxTokens: 300, temperature: 0.12, responseFormat: { type: "json_object" } }),
   }), { label: "Groq sports context", attempts: 2, keySlot, timeout: 60000 });
 
   const parsed = JSON.parse(cleanJson(response.choices?.[0]?.message?.content || "{}"));
@@ -5251,11 +5265,8 @@ Transcript:
 ${transcript}`;
 
   const response = await withGroqRetry((client) => client.chat.completions.create({
-    model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.25,
-    max_tokens: 1400,
-    response_format: { type: "json_object" },
+    ...groqChatParams(groqChatModel(), { maxTokens: 1400, temperature: 0.25, responseFormat: { type: "json_object" } }),
   }), { label: "Groq sports clip planning", attempts: 3, keySlot });
 
   const raw = response.choices?.[0]?.message?.content || "";
