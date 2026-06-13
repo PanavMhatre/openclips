@@ -1874,28 +1874,27 @@ Clip summary: ${clip.focus || clip.title}
 Transcript (ground truth — only use facts from here):
 ${transcript || "(no transcript available)"}
 
-YOUR GOAL: write a hook so punchy and specific that someone scrolling at 2am stops dead. Then a body that makes them feel like they just got insider information. Then they follow because they don't want to miss the next one.
+YOUR GOAL: stop the scroll in 0.5 seconds. Make them feel like they just got leaked information nobody else has. Make them follow because missing the next clip feels like a real risk.
 
-HOOK RULES — this is the most important field:
-- 4-8 words, ALL CAPS
-- Must name a real person, company, or product from the transcript — never anonymous
-- Must be a PROVOCATION, CONFESSION, or BOMBSHELL — not a description
-- Use charged language: "LIED", "BROKE", "EXPOSED", "NOBODY TELLS YOU", "THEY DON'T WANT YOU TO KNOW", "JUST ADMITTED", "IS OVER", "WILL COLLAPSE"
-- STRONG: "SAM ALTMAN JUST ADMITTED THIS", "ELON LIED ABOUT THIS NUMBER", "APPLE IS QUIETLY LOSING", "THEY'RE HIDING THIS FROM YOU", "YOUR BROKER DOESN'T WANT YOU TO KNOW THIS", "WARREN BUFFETT SAID SELL"
-- WEAK: "Big News", "Interesting Take", "AI Update", "Market Thoughts"
+HOOK — the single most important line. Gets 0.5 seconds of attention:
+- 4-8 words, ALL CAPS, zero filler
+- Name the REAL person or company — "SAM ALTMAN", "ELON", "NVIDIA", "THE FED" — never "a CEO" or "an expert"
+- Frame it as a confession, leak, or betrayal: "JUST ADMITTED", "THEY LIED", "FINALLY EXPOSED", "IS SECRETLY DOING THIS", "WILL DESTROY YOUR SAVINGS", "NOBODY WARNED YOU"
+- The hook must create a KNOWLEDGE GAP — the viewer doesn't know what comes after it and NEEDS to
+- FIRE: "SAM ALTMAN JUST ADMITTED THIS", "ELON LIED ABOUT THESE NUMBERS", "THE FED IS LYING TO YOU", "NVIDIA IS SECRETLY DOING THIS", "THEY DESTROYED YOUR 401K ON PURPOSE", "WARREN BUFFETT JUST QUIETLY SOLD", "APPLE KNOWS IT'S LOSING"
+- DEAD: "Big News", "Market Update", "AI Thoughts", "Interesting Take", "Important Info"
 
-BODY RULES:
-- 3-4 sentences, 250-500 characters
-- Open with WHO said it and the specific claim or number — make it feel like breaking news
-- Second sentence: the mechanism or proof — why this is real and not hype
-- Third sentence: what this means for the viewer personally — their money, their job, their future
-- Use "they", "nobody", "most people don't know" — create an in-group feeling
-- Must contain at least one concrete fact (name, number, date, company) from the transcript
-- Must NOT repeat any word or phrase from the hook
+BODY — 3-4 sentences, 260-520 characters. This is what earns the follow:
+- Sentence 1: NAME dropped immediately + the specific shocking claim or number. Sound like a journalist with a source, not a podcast recap.
+- Sentence 2: The mechanism — the concrete proof, the internal logic, the number that makes it undeniable. This is what makes people screenshot.
+- Sentence 3: Personal stakes — what does this mean for their money, career, or future RIGHT NOW. Not abstract. "If you own [X], this matters." "This is why you're not getting ahead."
+- Sentence 4 (optional): Open loop — hint that there's more: "And that's just the beginning.", "The part nobody's talking about is coming next.", "Follow for what happens in 30 days."
+- Write like you're texting a friend who needs to know this RIGHT NOW. Not a press release. Not a summary.
+- Zero repeated words or phrases from the hook.
 
 CTA: exactly "Follow PodByte Edits for daily finance & tech breakdowns."
 
-Ground truth: only use names, companies, numbers that appear in the transcript. Never invent.
+Ground truth: only use names, numbers, companies explicitly in the transcript. Never fabricate.
 
 Return ONLY JSON:
 {"hook":"...","body":"...","cta":"..."}`;
@@ -2986,9 +2985,9 @@ RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end se
 
 FIELD RULES:
 - "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
-- "hook": 4-8 UPPERCASE words for the on-screen text. Must be a PROVOCATION or BOMBSHELL that names the real person/company. Use charged words: LIED, BROKE, EXPOSED, ADMITTED, COLLAPSE, OVER, NOBODY KNOWS, THEY HID THIS.
-  STRONG: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THIS NUMBER" | "APPLE IS QUIETLY DYING" | "THEY'RE HIDING THIS FROM YOU" | "OPENAI IS ABOUT TO COLLAPSE" | "NOBODY TELLS YOU THIS"
-  WEAK: "Podcast Moment" | "AI and Scale" | "Revenue Performance" | "Big News Today" | "Interesting Insight"
+- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — name the REAL person or company, create an instant knowledge gap. Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, IS OVER, WILL DESTROY, GOT CAUGHT, FINALLY BROKE, QUIETLY SOLD.
+  FIRE: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "APPLE KNOWS IT'S LOSING" | "THEY DESTROYED YOUR 401K" | "WARREN BUFFETT QUIETLY SOLD"
+  DEAD: "Podcast Moment" | "AI Update" | "Market Thoughts" | "Big News" | "Interesting Insight" | "Revenue Performance"
 - "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
 - "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
 - "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
@@ -4360,8 +4359,8 @@ function layoutViralHookLines(lines) {
   // Place hook in mid-frame zone (30–52%) — below face portrait, clearly visible
   const minTop    = Math.round(VIDEO_HEIGHT * 0.30) - 110;  // ~274px
   const maxBottom = Math.round(VIDEO_HEIGHT * 0.52) - 110;  // ~555px
-  let hookSize = Math.round((lineCount > 2 ? 50 : lineCount > 1 ? 58 : 66) * VIDEO_SCALE);
-  let hookStroke = Math.round(10 * VIDEO_SCALE);
+  let hookSize = Math.round((lineCount > 2 ? 58 : lineCount > 1 ? 68 : 78) * VIDEO_SCALE);
+  let hookStroke = Math.round(12 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
 
   while (lineCount * lineHeight > maxBottom - minTop && hookSize > 32) {
