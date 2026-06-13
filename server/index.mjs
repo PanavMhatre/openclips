@@ -2954,7 +2954,7 @@ ${transcript}`;
     }), { label: "Groq clip planning", attempts: 3, keySlot }),
     // NVIDIA clip planning (parallel — only if key present)
     hasNvidiaApiKey()
-      ? callNvidiaChat([{ role: "user", content: prompt }], { model: nvidiaModel, maxTokens: 1600, temperature: 0.35, label: "clip planning" })
+      ? callNvidiaChat([{ role: "user", content: prompt }], { model: nvidiaModel, maxTokens: 1600, temperature: 0.35, label: "clip planning", keySlot })
       : Promise.reject(new Error("No NVIDIA key")),
   ]);
 
@@ -4748,35 +4748,77 @@ function escapeXml(value) {
 const GROQ_CLIENT_TIMEOUT_MS = 90000;
 // ─── NVIDIA API ───────────────────────────────────────────────────────────────
 
-function getNvidiaApiKey() {
-  return String(process.env.NVIDIA_API_KEY || process.env.OPENCLIPS_NVIDIA_API_KEY || "").trim();
+let cachedNvidiaApiKeys = null;
+let nvidiaKeyRoundRobin = 0;
+
+function getNvidiaApiKeys() {
+  if (cachedNvidiaApiKeys) return cachedNvidiaApiKeys;
+  const keys = [];
+  const seen = new Set();
+  const addKeys = (raw) => {
+    String(raw || "")
+      .split(/[\s,]+/)
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .forEach((k) => { if (!seen.has(k)) { seen.add(k); keys.push(k); } });
+  };
+  addKeys(process.env.NVIDIA_API_KEYS);
+  addKeys(process.env.NVIDIA_API_KEY);
+  addKeys(process.env.OPENCLIPS_NVIDIA_API_KEY);
+  cachedNvidiaApiKeys = keys;
+  return keys;
 }
 
 function hasNvidiaApiKey() {
-  return Boolean(getNvidiaApiKey());
+  return getNvidiaApiKeys().length > 0;
 }
 
-async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature = 0.35, label = "NVIDIA" } = {}) {
-  const key = getNvidiaApiKey();
-  if (!key) throw new Error("NVIDIA_API_KEY not set");
+function nvidiaKeyForSlot(slot) {
+  const keys = getNvidiaApiKeys();
+  if (!keys.length) return null;
+  const offset = slot != null && Number.isFinite(Number(slot))
+    ? Math.abs(Number(slot)) % keys.length
+    : nvidiaKeyRoundRobin++ % keys.length;
+  return keys[offset % keys.length];
+}
+
+async function callNvidiaChat(messages, { model, maxTokens = 1600, temperature = 0.35, label = "NVIDIA", keySlot, attempts = 3 } = {}) {
+  const keys = getNvidiaApiKeys();
+  if (!keys.length) throw new Error("NVIDIA_API_KEYS not set");
   const body = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: false });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000);
-  try {
-    const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body,
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`NVIDIA ${label} HTTP ${res.status}: ${err.slice(0, 200)}`);
+  let lastError;
+  const baseOffset = keySlot != null && Number.isFinite(Number(keySlot))
+    ? Math.abs(Number(keySlot)) % keys.length
+    : nvidiaKeyRoundRobin++ % keys.length;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const key = keys[(baseOffset + attempt) % keys.length];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+    try {
+      const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.status === 429 || res.status >= 500) {
+        lastError = new Error(`NVIDIA ${label} HTTP ${res.status}`);
+        continue;
+      }
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`NVIDIA ${label} HTTP ${res.status}: ${err.slice(0, 200)}`);
+      }
+      return await res.json();
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      if (attempt < attempts - 1) continue;
     }
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
   }
+  throw lastError || new Error(`NVIDIA ${label} failed after ${attempts} attempts`);
 }
 
 // ─── GROQ KEY MANAGEMENT ──────────────────────────────────────────────────────

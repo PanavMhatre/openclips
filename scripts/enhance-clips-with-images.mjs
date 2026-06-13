@@ -51,9 +51,21 @@ function getGroqKey() {
   return keys[Math.floor(Math.random() * keys.length)] || "";
 }
 
+function getNvidiaKey() {
+  const keys = String(process.env.NVIDIA_API_KEYS || process.env.NVIDIA_API_KEY || "")
+    .split(/[\s,]+/).map(k => k.trim()).filter(Boolean);
+  return keys[Math.floor(Math.random() * keys.length)] || "";
+}
+
 async function generatePixabayQueries(clip) {
-  const key = getGroqKey();
+  const key = getGroqKey() || getNvidiaKey();
   if (!key) return null;
+  const isNvidia = !getGroqKey() && Boolean(key);
+  const hostname = isNvidia ? "integrate.api.nvidia.com" : "api.groq.com";
+  const urlPath = "/v1/chat/completions";
+  const model = isNvidia
+    ? (process.env.OPENCLIPS_NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6")
+    : (process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.3-70b-versatile");
   const hook = clip.hook || "";
   const title = clip.title || clip._projectTitle || "";
   const focus = (clip.focus || "").slice(0, 200);
@@ -70,13 +82,13 @@ Rules:
 
   return new Promise((resolve) => {
     const body = JSON.stringify({
-      model: process.env.OPENCLIPS_GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+      model,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 80,
       temperature: 0.3,
     });
     const req = https.request({
-      hostname: "api.groq.com", path: "/openai/v1/chat/completions", method: "POST",
+      hostname, path: isNvidia ? urlPath : "/openai/v1/chat/completions", method: "POST",
       headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
       timeout: 15000,
     }, (res) => {
