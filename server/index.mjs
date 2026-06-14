@@ -553,6 +553,20 @@ if (!IS_PROD) {
 // Called by GitHub Actions. Searches YouTube via yt-dlp (using server's IP +
 // cookies), downloads each video, uploads to GitHub storage, returns URLs.
 // Protected by OPENCLIPS_FETCH_SECRET bearer token.
+// In-memory job store for async fetch-videos
+const fetchJobs = {};
+
+app.get("/api/fetch-videos/status/:jobId", (req, res) => {
+  const secret = process.env.OPENCLIPS_FETCH_SECRET;
+  if (secret) {
+    const auth = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    if (auth !== secret) return res.status(401).json({ error: "Unauthorized" });
+  }
+  const job = fetchJobs[req.params.jobId];
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json(job);
+});
+
 app.post("/api/fetch-videos", express.json(), async (req, res) => {
   const secret = process.env.OPENCLIPS_FETCH_SECRET;
   if (secret) {
@@ -580,6 +594,11 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   }
 
   if (!channels.length) return res.status(500).json({ error: "No channels in roster" });
+
+  // Respond immediately with job ID — download runs in background
+  const jobId = crypto.randomUUID();
+  fetchJobs[jobId] = { ok: false, status: "running", count: 0, videos: [] };
+  res.json({ ok: true, jobId, status: "running" });
 
   // Search YouTube via yt-dlp for each channel
   const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
@@ -679,7 +698,8 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
     }
   }
 
-  res.json({ ok: true, count: downloaded.length, videos: downloaded });
+  fetchJobs[jobId] = { ok: true, status: "done", count: downloaded.length, videos: downloaded };
+  console.log(`[fetch-videos] job ${jobId} done — ${downloaded.length} videos`);
 });
 
 app.listen(PORT, "0.0.0.0", () => {

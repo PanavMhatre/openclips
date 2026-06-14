@@ -124,19 +124,37 @@ jobs:
             node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
           else
             echo "Calling Render fetch-videos endpoint..."
-            RESPONSE=$(curl -sf --max-time 1800 \
+            START_RESPONSE=$(curl -sf --max-time 30 \
               -X POST "$OPENCLIPS_RENDER_URL/api/fetch-videos" \
               -H "Authorization: Bearer $OPENCLIPS_FETCH_SECRET" \
               -H "Content-Type: application/json" \
               -d '{"limit":1,"minDuration":1200}')
-            echo "$RESPONSE" | node -e "
-              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-              if (!d.ok) { console.error('Render fetch failed:', JSON.stringify(d)); process.exit(1); }
-              console.log('Videos fetched:', d.count);
-              d.videos.forEach(v => console.log(' -', v.title, v.githubUrl ? '[uploaded]' : '[local]'));
-              const urls = d.videos.map(v => ({ url: v.githubUrl || v.url, title: v.title, duration: v.duration, channel: v.channel }));
-              require('fs').writeFileSync('/tmp/oc-fresh-urls.json', JSON.stringify(urls, null, 2));
-            "
+            echo "Started: $START_RESPONSE"
+            JOB_ID=$(echo "$START_RESPONSE" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.jobId||'')")
+            if [ -z "$JOB_ID" ]; then
+              echo "Failed to get job ID"; exit 1
+            fi
+            echo "Polling job $JOB_ID..."
+            for i in $(seq 1 60); do
+              sleep 30
+              STATUS=$(curl -sf --max-time 15 \
+                "$OPENCLIPS_RENDER_URL/api/fetch-videos/status/$JOB_ID" \
+                -H "Authorization: Bearer $OPENCLIPS_FETCH_SECRET" 2>/dev/null || echo '{}')
+              DONE=$(echo "$STATUS" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.status==='done'?'yes':'no')}catch{console.log('no')}")
+              echo "Poll $i: $DONE"
+              if [ "$DONE" = "yes" ]; then
+                echo "$STATUS" | node -e "
+                  const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+                  if (!d.ok) { console.error('Render fetch failed:', JSON.stringify(d)); process.exit(1); }
+                  console.log('Videos fetched:', d.count);
+                  d.videos.forEach(v => console.log(' -', v.title, v.githubUrl ? '[uploaded]' : '[local]'));
+                  const urls = d.videos.map(v => ({ url: v.githubUrl || v.url, title: v.title, duration: v.duration, channel: v.channel }));
+                  require('fs').writeFileSync('/tmp/oc-fresh-urls.json', JSON.stringify(urls, null, 2));
+                "
+                break
+              fi
+              if [ "$i" = "60" ]; then echo "Timed out waiting for Render job"; exit 1; fi
+            done
           fi
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
