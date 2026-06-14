@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server/index.mjs",
-    "build": "vite build && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ./yt-dlp && chmod +x ./yt-dlp && echo 'yt-dlp installed:' $(./yt-dlp --version) || true",
+    "build": "vite build",
     "preview": "NODE_ENV=production node server/index.mjs",
     "check": "npm run build",
     "cleanup": "node scripts/cleanup-old-sources.mjs",

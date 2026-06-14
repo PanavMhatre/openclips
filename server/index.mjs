@@ -14,13 +14,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
 
-// Ensure project root and $HOME/.local/bin are in PATH (yt-dlp installed there on Render)
-const extraPaths = [ROOT_DIR, process.env.HOME && path.join(process.env.HOME, ".local", "bin")].filter(Boolean);
-for (const p of extraPaths) {
-  if (!process.env.PATH?.includes(p)) {
-    process.env.PATH = `${p}:${process.env.PATH || ""}`;
+// Ensure $HOME/.local/bin is in PATH and install yt-dlp there if missing
+(async () => {
+  const localBin = path.join(process.env.HOME || "/root", ".local", "bin");
+  if (!process.env.PATH?.includes(localBin)) {
+    process.env.PATH = `${localBin}:${process.env.PATH || ""}`;
   }
-}
+  const ytdlpPath = path.join(localBin, "yt-dlp");
+  try {
+    await fsp.access(ytdlpPath, fs.constants.X_OK);
+  } catch {
+    try {
+      await fsp.mkdir(localBin, { recursive: true });
+      const { spawn: sp } = await import("node:child_process");
+      await new Promise((resolve, reject) => {
+        const curl = sp("curl", ["-fsSL", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp", "-o", ytdlpPath]);
+        curl.on("close", code => code === 0 ? resolve() : reject(new Error(`curl exit ${code}`)));
+      });
+      await fsp.chmod(ytdlpPath, 0o755);
+      console.log("[ytdlp] binary installed to", ytdlpPath);
+    } catch (e) {
+      console.warn("[ytdlp] auto-install failed:", e.message);
+    }
+  }
+})();
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 const CLIP_DIR = path.join(DATA_DIR, "clips");
