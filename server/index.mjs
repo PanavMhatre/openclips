@@ -27,6 +27,28 @@ const BALL_TRACKER_PATH = path.join(__dirname, "ball_tracker.py");
 const PORT = Number(process.env.PORT || 3000);
 const IS_PROD = process.env.NODE_ENV === "production";
 
+// ── Cookie init — write YTDLP_COOKIES env var to disk on startup ──────────────
+(async () => {
+  const cookies = process.env.YTDLP_COOKIES;
+  if (!cookies) return;
+  const cookiePath = path.join(process.env.HOME || "/root", ".config", "yt-dlp", "cookies.txt");
+  await fsp.mkdir(path.dirname(cookiePath), { recursive: true });
+  await fsp.writeFile(cookiePath, cookies, "utf8");
+  // Write yt-dlp config pointing at cookies + polite delays
+  const configPath = path.join(process.env.HOME || "/root", ".config", "yt-dlp", "config");
+  const config = [
+    "--no-check-certificate",
+    "--sleep-requests 2",
+    "--sleep-interval 3",
+    "--max-sleep-interval 8",
+    "--retries 5",
+    "--retry-sleep 15",
+    `--cookies ${cookiePath}`,
+  ].join("\n");
+  await fsp.writeFile(configPath, config, "utf8");
+  console.log(`[ytdlp] cookies written to ${cookiePath}`);
+})();
+
 const DESIGN_WIDTH = 1080;
 const DESIGN_HEIGHT = 1920;
 const VIDEO_WIDTH = Math.max(360, Number(process.env.OPENCLIPS_RENDER_WIDTH || 720));
@@ -501,6 +523,139 @@ if (!IS_PROD) {
     res.sendFile(path.join(ROOT_DIR, "dist", "index.html"));
   });
 }
+
+// ── POST /api/fetch-videos ────────────────────────────────────────────────────
+// Called by GitHub Actions. Searches YouTube via yt-dlp (using server's IP +
+// cookies), downloads each video, uploads to GitHub storage, returns URLs.
+// Protected by OPENCLIPS_FETCH_SECRET bearer token.
+app.post("/api/fetch-videos", express.json(), async (req, res) => {
+  const secret = process.env.OPENCLIPS_FETCH_SECRET;
+  if (secret) {
+    const auth = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    if (auth !== secret) return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const minDuration = Number(req.body?.minDuration || 1200);
+  const limitPerChannel = Number(req.body?.limit || 1);
+
+  // Parse channel roster
+  let rosterMd;
+  try {
+    rosterMd = fs.readFileSync(path.join(ROOT_DIR, "references", "channel-roster.md"), "utf8");
+  } catch {
+    return res.status(500).json({ error: "channel-roster.md not found" });
+  }
+
+  const channels = [];
+  for (const line of rosterMd.split("\n")) {
+    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*(@[^\s|]+|https?:\/\/[^\s|]+)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|/);
+    if (m && !m[1].toLowerCase().includes("name")) {
+      channels.push({ name: m[1].trim(), handle: m[2].trim(), searchAlias: m[3].trim(), weight: Number(m[4]) || 1 });
+    }
+  }
+
+  if (!channels.length) return res.status(500).json({ error: "No channels in roster" });
+
+  // Search YouTube via yt-dlp for each channel
+  const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
+  async function searchChannel(alias, limit) {
+    const fetchCount = Math.max(limit * 5, 10);
+    return new Promise((resolve) => {
+      const args = [
+        "--no-check-certificate", "--no-playlist", "--flat-playlist",
+        "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
+        "--no-warnings", `ytsearch${fetchCount}:${alias}`,
+      ];
+      const proc = spawn("yt-dlp", args, { timeout: 60000 });
+      let out = "";
+      proc.stdout.on("data", d => out += d);
+      proc.on("close", () => {
+        const results = [];
+        for (const line of out.trim().split("\n")) {
+          if (!line.trim()) continue;
+          const [url, title, duration, uploader, vcodec] = line.split("\t");
+          if (!url || !title) continue;
+          const dur = Number(duration);
+          if (!dur || dur < minDuration) continue;
+          if (vcodec?.trim().toLowerCase() === "none" || AUDIO_RE.test(title)) continue;
+          results.push({ url: url.trim(), title: title.trim(), duration: dur, uploader: (uploader || "").trim() });
+          if (results.length >= limit) break;
+        }
+        resolve(results);
+      });
+      proc.on("error", () => resolve([]));
+    });
+  }
+
+  // Collect all candidate URLs
+  const videoList = [];
+  for (const ch of channels) {
+    const limit = limitPerChannel * ch.weight;
+    const results = await searchChannel(ch.searchAlias, limit);
+    for (const v of results) videoList.push({ ...v, channel: ch.name, channelWeight: ch.weight });
+  }
+
+  if (!videoList.length) return res.status(502).json({ error: "yt-dlp returned no results — cookies may need refresh" });
+
+  // Download each video and upload to GitHub storage
+  const storageToken = process.env.GITHUB_STORAGE_TOKEN;
+  const storageRepo = process.env.GITHUB_STORAGE_REPO || "PanavMhatre/openclips-media";
+  const storageBranch = process.env.GITHUB_STORAGE_BRANCH || "main";
+  const storageDir = (process.env.GITHUB_STORAGE_DIR || "clips").replace(/^\/+|\/+$/g, "");
+
+  const downloaded = [];
+  const tmpDir = path.join(DATA_DIR, "sources");
+  await fsp.mkdir(tmpDir, { recursive: true });
+
+  for (const video of videoList) {
+    const safeTitle = video.title.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 60);
+    const outPath = path.join(tmpDir, `${safeTitle}.mp4`);
+    try {
+      await new Promise((resolve, reject) => {
+        const args = [
+          "--no-check-certificate", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+          "--merge-output-format", "mp4", "-o", outPath, "--no-playlist", video.url,
+        ];
+        const proc = spawn("yt-dlp", args, { timeout: 600000 });
+        proc.on("close", code => code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}`)));
+        proc.on("error", reject);
+      });
+
+      // Upload to GitHub storage
+      let githubUrl = null;
+      if (storageToken) {
+        const fileBytes = await fsp.readFile(outPath);
+        const b64 = fileBytes.toString("base64");
+        const fileName = path.basename(outPath);
+        const apiUrl = `https://api.github.com/repos/${storageRepo}/contents/${storageDir}/${fileName}`;
+        const ghRes = await fetch(apiUrl, {
+          method: "PUT",
+          headers: { Authorization: `token ${storageToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Upload ${fileName}`, content: b64, branch: storageBranch }),
+        });
+        if (ghRes.ok) {
+          githubUrl = `https://raw.githubusercontent.com/${storageRepo}/${storageBranch}/${storageDir}/${fileName}`;
+          // Clean up local file after upload
+          await fsp.unlink(outPath).catch(() => {});
+        }
+      }
+
+      downloaded.push({
+        url: video.url,
+        title: video.title,
+        duration: video.duration,
+        channel: video.channel,
+        localPath: githubUrl ? null : outPath,
+        githubUrl,
+      });
+      console.log(`[fetch-videos] downloaded: ${video.title.slice(0, 60)}`);
+    } catch (err) {
+      console.error(`[fetch-videos] failed: ${video.title.slice(0, 60)} — ${err.message}`);
+    }
+  }
+
+  res.json({ ok: true, count: downloaded.length, videos: downloaded });
+});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`OpenClips running at http://localhost:${PORT}`);

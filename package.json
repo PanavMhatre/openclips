@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server/index.mjs",
-    "build": "vite build",
+    "build": "vite build && pip install -q yt-dlp 2>/dev/null || pip3 install -q yt-dlp 2>/dev/null || true",
     "preview": "NODE_ENV=production node server/index.mjs",
     "check": "npm run build",
     "cleanup": "node scripts/cleanup-old-sources.mjs",

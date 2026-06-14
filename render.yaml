@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: openclips
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build --if-present
+    startCommand: node server/index.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: YTDLP_COOKIES
+        sync: false          # set manually in Render dashboard
+      - key: OPENCLIPS_FETCH_SECRET
+        sync: false          # set manually — must match GitHub secret
+      - key: GITHUB_STORAGE_TOKEN
+        sync: false
+      - key: GITHUB_STORAGE_REPO
+        value: PanavMhatre/openclips-media
+      - key: GITHUB_STORAGE_BRANCH
+        value: main
+      - key: GITHUB_STORAGE_DIR
+        value: clips
+      - key: GROQ_API_KEYS
+        sync: false
+      - key: NVIDIA_API_KEYS
+        sync: false
+      - key: NVIDIA_DEEPSEEK_API_KEYS
+        sync: false
+      - key: OPENCLIPS_GROQ_CHAT_MODEL
+        value: openai/gpt-oss-120b
+      - key: OPENCLIPS_GROQ_TRANSCRIBE_MODEL
+        value: whisper-large-v3-turbo
+      - key: OPENCLIPS_NVIDIA_CHAT_MODEL
+        value: moonshotai/kimi-k2.6

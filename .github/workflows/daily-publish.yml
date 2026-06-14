@@ -30,6 +30,8 @@ jobs:
       GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
       NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
       NVIDIA_DEEPSEEK_API_KEYS: ${{ secrets.NVIDIA_DEEPSEEK_API_KEYS }}
+      OPENCLIPS_RENDER_URL: ${{ secrets.OPENCLIPS_RENDER_URL }}
+      OPENCLIPS_FETCH_SECRET: ${{ secrets.OPENCLIPS_FETCH_SECRET }}
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_CHANNEL_IDS }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -114,11 +116,29 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
-      - name: Fetch newest YouTube videos
+      - name: Fetch newest YouTube videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         run: |
-          node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
-          echo "Videos found:"
+          if [ -z "$OPENCLIPS_RENDER_URL" ]; then
+            echo "OPENCLIPS_RENDER_URL not set — falling back to local yt-dlp"
+            node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
+          else
+            echo "Calling Render fetch-videos endpoint..."
+            RESPONSE=$(curl -sf --max-time 1800 \
+              -X POST "$OPENCLIPS_RENDER_URL/api/fetch-videos" \
+              -H "Authorization: Bearer $OPENCLIPS_FETCH_SECRET" \
+              -H "Content-Type: application/json" \
+              -d '{"limit":1,"minDuration":1200}')
+            echo "$RESPONSE" | node -e "
+              const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+              if (!d.ok) { console.error('Render fetch failed:', JSON.stringify(d)); process.exit(1); }
+              console.log('Videos fetched:', d.count);
+              d.videos.forEach(v => console.log(' -', v.title, v.githubUrl ? '[uploaded]' : '[local]'));
+              const urls = d.videos.map(v => ({ url: v.githubUrl || v.url, title: v.title, duration: v.duration, channel: v.channel }));
+              require('fs').writeFileSync('/tmp/oc-fresh-urls.json', JSON.stringify(urls, null, 2));
+            "
+          fi
+          echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
       - name: Submit & process videos
