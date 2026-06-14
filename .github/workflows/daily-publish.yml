@@ -90,18 +90,6 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Write yt-dlp cookies
-        env:
-          YTDLP_COOKIES: ${{ secrets.YTDLP_COOKIES }}
-        run: |
-          if [ -n "$YTDLP_COOKIES" ]; then
-            mkdir -p ~/.config/yt-dlp
-            echo "$YTDLP_COOKIES" > ~/.config/yt-dlp/cookies.txt
-            echo "Cookies written ($(wc -l < ~/.config/yt-dlp/cookies.txt) lines)."
-          else
-            echo "No YTDLP_COOKIES secret — skipping."
-          fi
-
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
 
