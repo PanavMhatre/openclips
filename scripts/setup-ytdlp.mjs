@@ -32,6 +32,9 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
+  // Use Android/creator API clients — bypasses YouTube's datacenter IP bot-check
+  // without requiring valid session cookies
+  '--extractor-args "youtube:player_client=android,web_creator"',
 ];
 
 if (cookiesFile) {
