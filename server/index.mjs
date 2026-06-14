@@ -13,6 +13,14 @@ import sharp from "sharp";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
+
+// Ensure $HOME/.local/bin is in PATH (for yt-dlp installed there on Render)
+if (process.env.HOME) {
+  const localBin = path.join(process.env.HOME, ".local", "bin");
+  if (!process.env.PATH?.includes(localBin)) {
+    process.env.PATH = `${localBin}:${process.env.PATH || ""}`;
+  }
+}
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 const CLIP_DIR = path.join(DATA_DIR, "clips");
