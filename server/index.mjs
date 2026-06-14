@@ -14,11 +14,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
 
-// Ensure $HOME/.local/bin is in PATH (for yt-dlp installed there on Render)
-if (process.env.HOME) {
-  const localBin = path.join(process.env.HOME, ".local", "bin");
-  if (!process.env.PATH?.includes(localBin)) {
-    process.env.PATH = `${localBin}:${process.env.PATH || ""}`;
+// Ensure project root and $HOME/.local/bin are in PATH (yt-dlp installed there on Render)
+const extraPaths = [ROOT_DIR, process.env.HOME && path.join(process.env.HOME, ".local", "bin")].filter(Boolean);
+for (const p of extraPaths) {
+  if (!process.env.PATH?.includes(p)) {
+    process.env.PATH = `${p}:${process.env.PATH || ""}`;
   }
 }
 const DATA_DIR = path.join(ROOT_DIR, "data");
