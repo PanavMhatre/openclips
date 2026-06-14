@@ -519,7 +519,7 @@ if (!IS_PROD) {
   app.use(vite.middlewares);
 } else {
   app.use(express.static(path.join(ROOT_DIR, "dist")));
-  app.get("*", (_req, res) => {
+  app.get("/{*path}", (_req, res) => {
     res.sendFile(path.join(ROOT_DIR, "dist", "index.html"));
   });
 }
