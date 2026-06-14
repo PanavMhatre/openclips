@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server/index.mjs",
-    "build": "vite build && pip install -q yt-dlp 2>/dev/null || pip3 install -q yt-dlp 2>/dev/null || true",
+    "build": "vite build && (pip install -q yt-dlp || pip3 install -q yt-dlp || curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod +x /usr/local/bin/yt-dlp) 2>/dev/null || true",
     "preview": "NODE_ENV=production node server/index.mjs",
     "check": "npm run build",
     "cleanup": "node scripts/cleanup-old-sources.mjs",
