@@ -535,20 +535,6 @@ app.post("/api/sports-projects/:id/rerun", async (req, res) => {
 
 // ─── End sports routes ────────────────────────────────────────────────────────
 
-if (!IS_PROD) {
-  const vite = await createViteServer({
-    root: ROOT_DIR,
-    appType: "spa",
-    server: { middlewareMode: true },
-  });
-  app.use(vite.middlewares);
-} else {
-  app.use(express.static(path.join(ROOT_DIR, "dist")));
-  app.get("/{*path}", (_req, res) => {
-    res.sendFile(path.join(ROOT_DIR, "dist", "index.html"));
-  });
-}
-
 // ── POST /api/fetch-videos ────────────────────────────────────────────────────
 // Called by GitHub Actions. Searches YouTube via yt-dlp (using server's IP +
 // cookies), downloads each video, uploads to GitHub storage, returns URLs.
@@ -701,6 +687,20 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   fetchJobs[jobId] = { ok: true, status: "done", count: downloaded.length, videos: downloaded };
   console.log(`[fetch-videos] job ${jobId} done — ${downloaded.length} videos`);
 });
+
+if (!IS_PROD) {
+  const vite = await createViteServer({
+    root: ROOT_DIR,
+    appType: "spa",
+    server: { middlewareMode: true },
+  });
+  app.use(vite.middlewares);
+} else {
+  app.use(express.static(path.join(ROOT_DIR, "dist")));
+  app.get("/{*path}", (_req, res) => {
+    res.sendFile(path.join(ROOT_DIR, "dist", "index.html"));
+  });
+}
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`OpenClips running at http://localhost:${PORT}`);
