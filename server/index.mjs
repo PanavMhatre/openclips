@@ -586,6 +586,9 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   fetchJobs[jobId] = { ok: false, status: "running", count: 0, videos: [] };
   res.json({ ok: true, jobId, status: "running" });
 
+  // All background work wrapped so any thrown error marks the job done (not frozen)
+  try {
+
   // Search YouTube via yt-dlp for each channel
   const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
   async function searchChannel(alias, limit) {
@@ -625,7 +628,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
     for (const v of results) videoList.push({ ...v, channel: ch.name, channelWeight: ch.weight });
   }
 
-  if (!videoList.length) return res.status(502).json({ error: "yt-dlp returned no results — cookies may need refresh" });
+  if (!videoList.length) {
+    fetchJobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results — cookies may need refresh", count: 0, videos: [] };
+    return;
+  }
 
   // Download each video and upload to GitHub storage
   const storageToken = process.env.GITHUB_STORAGE_TOKEN;
@@ -686,6 +692,11 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
 
   fetchJobs[jobId] = { ok: true, status: "done", count: downloaded.length, videos: downloaded };
   console.log(`[fetch-videos] job ${jobId} done — ${downloaded.length} videos`);
+
+  } catch (err) {
+    console.error(`[fetch-videos] job ${jobId} crashed:`, err.message);
+    fetchJobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+  }
 });
 
 if (!IS_PROD) {
