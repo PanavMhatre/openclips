@@ -20,6 +20,7 @@ import path from "node:path";
 const CONFIG_DIR = path.join(homedir(), ".config", "yt-dlp");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config");
 const DEFAULT_COOKIES = path.join(CONFIG_DIR, "cookies.txt");
+const PLUGIN_DIR = path.join(homedir(), ".yt-dlp-plugins");
 
 const cookiesFile =
   process.env.YOUTUBE_COOKIES_FILE ||
@@ -36,6 +37,11 @@ const lines = [
   // without requiring valid session cookies
   '--extractor-args "youtube:player_client=android,web_creator"',
 ];
+
+if (existsSync(PLUGIN_DIR)) {
+  lines.push(`--plugin-dirs ${PLUGIN_DIR}`);
+  process.stderr.write(`Using YouTube PO token plugin dir: ${PLUGIN_DIR}\n`);
+}
 
 if (cookiesFile) {
   if (!existsSync(cookiesFile)) {
