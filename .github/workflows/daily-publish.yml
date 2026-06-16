@@ -20,6 +20,10 @@ on:
         description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank for the default "next open day" behavior.'
         type: string
         default: ''
+      clip_count:
+        description: 'Number of clips to rank and schedule (use a small number to top up a partially-published day)'
+        type: string
+        default: '8'
 
 jobs:
   publish:
@@ -157,8 +161,9 @@ jobs:
 
       - name: Rank top 8 clips
         run: |
-          node scripts/rank-openclips-clips.mjs --top=8 --output=/tmp/oc-top8.json
-          echo "Top 8 clips:"
+          TOP_N="${{ github.event.inputs.clip_count }}"
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-8}" --output=/tmp/oc-top8.json
+          echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
             clips.forEach((c,i)=>console.log(\`  \${i+1}. \${c.hook||c.title} (\${Math.round((c.duration||0))}s)\`))
@@ -194,6 +199,8 @@ jobs:
           "
 
       - name: Enhance clips with Pixabay images
+        timeout-minutes: 20
+        continue-on-error: true
         run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
 
       - name: Push enhanced clips to storage repo
