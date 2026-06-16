@@ -16,6 +16,10 @@ on:
         description: 'Skip YouTube fetch, use existing clip pool'
         type: boolean
         default: false
+      publish_date:
+        description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank for the default "next open day" behavior.'
+        type: string
+        default: ''
 
 jobs:
   publish:
@@ -198,11 +202,17 @@ jobs:
 
       - name: Schedule to Buffer (dry run)
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run
+        run: |
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run $DATE_ARG
 
       - name: Schedule to Buffer (live)
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json
+        run: |
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $DATE_ARG
 
       - name: Cleanup old source files
         if: ${{ github.event.inputs.dry_run != 'true' }}
