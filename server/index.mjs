@@ -68,7 +68,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
     "--max-sleep-interval 8",
     "--retries 5",
     "--retry-sleep 15",
-    "--extractor-args \"youtube:player_client=android,web_creator\"",
+    "--extractor-args \"youtube:player_client=android_vr,mweb\"",
     `--cookies ${cookiePath}`,
   ].join("\n");
   await fsp.writeFile(configPath, config, "utf8");

@@ -33,9 +33,11 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // Use Android/creator API clients — bypasses YouTube's datacenter IP bot-check
-  // without requiring valid session cookies
-  '--extractor-args "youtube:player_client=android,web_creator"',
+  // android_vr needs no PO token at all; mweb is yt-dlp's officially recommended
+  // client to pair with a PO token provider plugin for GVS requests on
+  // datacenter IPs. android/web_creator (the previous choice) both require a
+  // PO token too, so they gained nothing from the plugin below.
+  '--extractor-args "youtube:player_client=android_vr,mweb"',
 ];
 
 if (existsSync(PLUGIN_DIR)) {
