@@ -33,17 +33,11 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // android_vr needs no PO token at all; mweb is yt-dlp's officially recommended
-  // client to pair with a PO token provider plugin for GVS requests on
-  // datacenter IPs. android/web_creator (the previous choice) both require a
-  // PO token too, so they gained nothing from the plugin below.
-  '--extractor-args "youtube:player_client=android_vr,mweb"',
+  // mweb uses the bgutil PO token provider (pip-installed) so it passes
+  // YouTube's bot check on datacenter IPs. android_vr is a fallback that
+  // sometimes bypasses the check without a token; ios is a further fallback.
+  '--extractor-args "youtube:player_client=mweb,ios,android_vr"',
 ];
-
-if (existsSync(PLUGIN_DIR)) {
-  lines.push(`--plugin-dirs ${PLUGIN_DIR}`);
-  process.stderr.write(`Using YouTube PO token plugin dir: ${PLUGIN_DIR}\n`);
-}
 
 if (cookiesFile) {
   if (!existsSync(cookiesFile)) {
