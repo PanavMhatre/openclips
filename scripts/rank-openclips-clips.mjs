@@ -360,15 +360,22 @@ function loadFromFile(metaPath) {
     const raw = readFileSync(metaPath, "utf8");
     const data = JSON.parse(raw);
     if (Array.isArray(data)) return data;
+    // Server writes { projects: { uuid: {...}, ... } } — unwrap one level
+    if (data.projects && typeof data.projects === "object") return Object.values(data.projects);
     if (typeof data === "object") return Object.values(data);
   } catch {}
   return null;
 }
 
+// Statuses that mean the project is still in-flight and has no clips yet
+const BUSY_STATUSES = new Set(["queued", "fetching", "transcribing", "analyzing", "rendering"]);
+
 function flattenClips(projects) {
   const clips = [];
   for (const project of projects) {
-    if (project.status && project.status !== "ready") continue;
+    const hasClips = (project.clips || []).length > 0;
+    // Skip only if still processing AND no clips produced yet
+    if (!hasClips && BUSY_STATUSES.has(project.status)) continue;
     for (const clip of project.clips || []) {
       const fileName = path.basename(clip.downloadUrl || clip.filePath || "");
       // Check both data/clips/ and the path the server stored on disk
