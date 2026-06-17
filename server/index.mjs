@@ -68,7 +68,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
     "--max-sleep-interval 8",
     "--retries 5",
     "--retry-sleep 15",
-    "--extractor-args \"youtube:player_client=android,web_creator\"",
+    "--extractor-args \"youtube:player_client=android_vr,mweb\"",
     `--cookies ${cookiePath}`,
   ].join("\n");
   await fsp.writeFile(configPath, config, "utf8");
@@ -97,6 +97,7 @@ const MAX_CLIP_SECONDS = 60;
 const DEFAULT_CLIP_COUNT = Math.max(1, Number(process.env.OPENCLIPS_DEFAULT_CLIP_COUNT || 3));
 const RENDER_FPS = Math.max(15, Number(process.env.OPENCLIPS_RENDER_FPS || 30));
 const MAX_RENDER_JOBS = Math.max(1, Number(process.env.OPENCLIPS_MAX_RENDER_JOBS || 1));
+const MAX_YTDLP_JOBS = Math.max(1, Number(process.env.OPENCLIPS_MAX_YTDLP_JOBS || 2));
 const RENDER_TIMEOUT_MS = Math.max(1000 * 60 * 20, Number(process.env.OPENCLIPS_RENDER_TIMEOUT_MS || 1000 * 60 * 60));
 const FFMPEG_THREADS = Number(process.env.OPENCLIPS_FFMPEG_THREADS || 0); // 0 = let FFmpeg auto-detect
 const FFMPEG_FILTER_THREADS = Math.max(1, Number(process.env.OPENCLIPS_FFMPEG_FILTER_THREADS || 3));
@@ -118,6 +119,9 @@ const CAPTION_YELLOW = "#fff200";
 
 let activeRenderJobs = 0;
 const renderQueue = [];
+
+let activeYtdlpJobs = 0;
+const ytdlpQueue = [];
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -2772,7 +2776,7 @@ async function downloadVideo(sourceUrl, projectId) {
   let uploader = "";
   let description = "";
   try {
-    const metadata = await runCommand("yt-dlp", [
+    const metadata = await runYtdlpWithRetry([
       "--no-playlist",
       "--skip-download",
       "--dump-single-json",
@@ -2786,7 +2790,7 @@ async function downloadVideo(sourceUrl, projectId) {
   } catch {
     title = "";
   }
-  await runCommand("yt-dlp", [
+  await runYtdlpWithRetry([
     "--no-playlist",
     "--force-overwrites",
     "-f",
@@ -2847,7 +2851,7 @@ async function extractAudio(sourcePath, audioPath) {
 async function fetchSourceCaptions(sourceUrl, projectId, duration) {
   const template = path.join(CAPTION_DIR, `${projectId}.%(ext)s`);
   try {
-    await runCommand("yt-dlp", [
+    await withYtdlpSlot(() => runCommand("yt-dlp", [
       "--no-playlist",
       "--skip-download",
       "--write-auto-subs",
@@ -2859,7 +2863,7 @@ async function fetchSourceCaptions(sourceUrl, projectId, duration) {
       "-o",
       template,
       sourceUrl,
-    ], { timeoutMs: 1000 * 60 * 3 });
+    ], { timeoutMs: 1000 * 60 * 3 }));
 
     const files = await fsp.readdir(CAPTION_DIR);
     const captionFile = files
@@ -3993,6 +3997,40 @@ async function withRenderSlot(task) {
     activeRenderJobs -= 1;
     const next = renderQueue.shift();
     if (next) next();
+  }
+}
+
+// YouTube's "Sign in to confirm you're not a bot" check is a per-request
+// probabilistic block, not a persistent IP ban — it fires far more often when
+// many yt-dlp processes hit youtube.com at once (e.g. submitting 20+ projects
+// in a tight loop). Capping concurrency and retrying transient hits clears it
+// most of the time without needing cookies.
+async function withYtdlpSlot(task) {
+  if (activeYtdlpJobs >= MAX_YTDLP_JOBS) {
+    await new Promise((resolve) => ytdlpQueue.push(resolve));
+  }
+
+  activeYtdlpJobs += 1;
+  try {
+    return await task();
+  } finally {
+    activeYtdlpJobs -= 1;
+    const next = ytdlpQueue.shift();
+    if (next) next();
+  }
+}
+
+const YTDLP_RETRIABLE_ERROR = /sign in to confirm|http error 429/i;
+
+async function runYtdlpWithRetry(args, options = {}, { attempts = 4, baseDelayMs = 10_000 } = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await withYtdlpSlot(() => runCommand("yt-dlp", args, options));
+    } catch (err) {
+      const retriable = YTDLP_RETRIABLE_ERROR.test(err.message);
+      if (attempt === attempts || !retriable) throw err;
+      await new Promise((resolve) => setTimeout(resolve, attempt * baseDelayMs));
+    }
   }
 }
 

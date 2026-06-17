@@ -401,10 +401,21 @@ async function main() {
     process.exit(1);
   }
 
-  // Build schedule plan
+  // Build schedule plan. If a slot's natural time has already passed (e.g. the
+  // pipeline ran late in the day), Buffer rejects it outright with "dueAt must
+  // be in the future" — instead, bump it forward to the next safe moment so the
+  // clip still gets published today rather than silently failing.
+  const MIN_LEAD_MS = 5 * 60 * 1000;
+  const now = Date.now();
+  let earliestNextMs = now + MIN_LEAD_MS;
   const plan = top5.map((clip, i) => {
     const slot = SLOT_TIMES[i] || SLOT_TIMES[SLOT_TIMES.length - 1];
-    const dueAt = slotToIso(publishDate, slot, args.timezone);
+    let dueAtMs = new Date(slotToIso(publishDate, slot, args.timezone)).getTime();
+    if (dueAtMs < earliestNextMs) {
+      dueAtMs = earliestNextMs;
+    }
+    earliestNextMs = dueAtMs + MIN_LEAD_MS;
+    const dueAt = new Date(dueAtMs).toISOString();
     const mediaUrl = resolvePublicUrl(clip);
     const text = buildPostText(clip);
     return { slot: i + 1, clip, dueAt, mediaUrl, text };
@@ -425,7 +436,12 @@ async function main() {
   process.stderr.write(`\nSchedule plan for ${publishDate} (${args.dryRun ? "DRY RUN" : "LIVE"}):\n`);
   process.stderr.write(`Channels: ${channelIds.length ? channelIds.join(", ") : "(not set)"}\n\n`);
   for (const item of plan) {
-    const time = `${String(SLOT_TIMES[item.slot - 1]?.hour).padStart(2, "0")}:${String(SLOT_TIMES[item.slot - 1]?.minute).padStart(2, "0")} ${args.timezone}`;
+    const natural = SLOT_TIMES[item.slot - 1];
+    const naturalIso = natural ? slotToIso(publishDate, natural, args.timezone) : null;
+    const bumped = naturalIso && new Date(naturalIso).getTime() !== new Date(item.dueAt).getTime();
+    const time = bumped
+      ? `${item.dueAt} (bumped — natural slot already passed)`
+      : `${String(natural?.hour).padStart(2, "0")}:${String(natural?.minute).padStart(2, "0")} ${args.timezone}`;
     process.stderr.write(
       `  Slot ${item.slot} @ ${time} (${item.dueAt})\n` +
       `    Hook: "${item.clip.hook || item.clip.title}"\n` +

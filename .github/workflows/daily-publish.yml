@@ -16,11 +16,25 @@ on:
         description: 'Skip YouTube fetch, use existing clip pool'
         type: boolean
         default: false
+      publish_date:
+        description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank for the default "next open day" behavior.'
+        type: string
+        default: ''
+      clip_count:
+        description: 'Number of clips to rank and schedule (use a small number to top up a partially-published day)'
+        type: string
+        default: '8'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+
+    services:
+      bgutil-provider:
+        image: brainicism/bgutil-ytdlp-pot-provider
+        ports:
+          - 4416:4416
 
     permissions:
       contents: write
@@ -48,6 +62,10 @@ jobs:
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
       # Keep clips local so enhance script can process them
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
+      # Run 2 ffmpeg renders concurrently (1 thread each) on the 2-vCPU runner
+      OPENCLIPS_MAX_RENDER_JOBS: "2"
+      OPENCLIPS_FFMPEG_THREADS: "1"
+      OPENCLIPS_MAX_YTDLP_JOBS: "3"
 
     steps:
       - name: Checkout
@@ -90,6 +108,22 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
+      - name: Download YouTube PO token plugin
+        run: |
+          # GitHub-hosted runner IPs are blocked almost universally by YouTube's
+          # "Sign in to confirm you're not a bot" check, regardless of which
+          # yt-dlp player client is used (already tried android/web_creator/etc).
+          # The bgutil-provider service container (started above) mints a real
+          # Proof-of-Origin token locally so yt-dlp's requests pass the bot
+          # check without needing browser cookies.
+          mkdir -p ~/.yt-dlp-plugins
+          curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
+            -o ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip
+          for i in $(seq 1 20); do
+            curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
+            sleep 1
+          done
+
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
 
@@ -131,8 +165,9 @@ jobs:
 
       - name: Rank top 8 clips
         run: |
-          node scripts/rank-openclips-clips.mjs --top=8 --output=/tmp/oc-top8.json
-          echo "Top 8 clips:"
+          TOP_N="${{ github.event.inputs.clip_count }}"
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-8}" --output=/tmp/oc-top8.json
+          echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
             clips.forEach((c,i)=>console.log(\`  \${i+1}. \${c.hook||c.title} (\${Math.round((c.duration||0))}s)\`))
@@ -168,6 +203,8 @@ jobs:
           "
 
       - name: Enhance clips with Pixabay images
+        timeout-minutes: 20
+        continue-on-error: true
         run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
 
       - name: Push enhanced clips to storage repo
@@ -198,11 +235,17 @@ jobs:
 
       - name: Schedule to Buffer (dry run)
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run
+        run: |
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run $DATE_ARG
 
       - name: Schedule to Buffer (live)
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json
+        run: |
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $DATE_ARG
 
       - name: Cleanup old source files
         if: ${{ github.event.inputs.dry_run != 'true' }}

@@ -376,16 +376,18 @@ function findImportantMoments(srtPath, clipDuration, maxImages) {
 
 // ── Pixabay image search ──────────────────────────────────────────────────────
 
-async function fetchJson(url) {
+async function fetchJson(url, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith("https") ? https : http;
-    mod.get(url, { headers: { "User-Agent": "OpenClips/1.0" } }, (res) => {
+    const req = mod.get(url, { headers: { "User-Agent": "OpenClips/1.0" }, timeout: timeoutMs }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => {
         try { resolve(JSON.parse(data)); } catch (e) { reject(new Error(`JSON parse: ${data.slice(0, 80)}`)); }
       });
-    }).on("error", reject);
+    });
+    req.on("timeout", () => req.destroy(new Error(`Pixabay request timed out after ${timeoutMs}ms`)));
+    req.on("error", reject);
   });
 }
 
@@ -435,20 +437,22 @@ async function fetchMomentMedia(query, apiKey, useVideo = true) {
 
 // ── Image download ────────────────────────────────────────────────────────────
 
-async function downloadImageFile(url, destPath) {
+async function downloadImageFile(url, destPath, timeoutMs = 15000) {
   const { createWriteStream } = await import("node:fs");
   return new Promise((resolve, reject) => {
     const follow = (u) => {
       const mod = u.startsWith("https") ? https : http;
       const stream = createWriteStream(destPath);
-      mod.get(u, { headers: { "User-Agent": "OpenClips/1.0" } }, (res) => {
+      const req = mod.get(u, { headers: { "User-Agent": "OpenClips/1.0" }, timeout: timeoutMs }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           stream.close(); follow(res.headers.location); return;
         }
         res.pipe(stream);
         stream.on("finish", () => stream.close(resolve));
         stream.on("error", reject);
-      }).on("error", reject);
+      });
+      req.on("timeout", () => req.destroy(new Error(`Pixabay download timed out after ${timeoutMs}ms`)));
+      req.on("error", reject);
     };
     follow(url);
   });

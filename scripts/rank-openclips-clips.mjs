@@ -203,8 +203,10 @@ function loadSentClipIds(ledgerPath) {
       : Array.isArray(parsed?.runs) ? parsed.runs : [];  // handle old dict format
     const ids = new Set();
     for (const entry of entries) {
-      for (const slot of entry.schedule || []) {
-        if (slot.clipId) ids.add(slot.clipId);
+      for (const slot of entry.clips || entry.schedule || []) {
+        // Only count clips that actually got at least one successful Buffer post —
+        // slots that failed (e.g. due time already passed) stay eligible for re-ranking.
+        if (slot.clipId && slot.postIds && Object.keys(slot.postIds).length > 0) ids.add(slot.clipId);
       }
     }
     return ids;

@@ -20,6 +20,7 @@ import path from "node:path";
 const CONFIG_DIR = path.join(homedir(), ".config", "yt-dlp");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config");
 const DEFAULT_COOKIES = path.join(CONFIG_DIR, "cookies.txt");
+const PLUGIN_DIR = path.join(homedir(), ".yt-dlp-plugins");
 
 const cookiesFile =
   process.env.YOUTUBE_COOKIES_FILE ||
@@ -32,10 +33,17 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // Use Android/creator API clients — bypasses YouTube's datacenter IP bot-check
-  // without requiring valid session cookies
-  '--extractor-args "youtube:player_client=android,web_creator"',
+  // android_vr needs no PO token at all; mweb is yt-dlp's officially recommended
+  // client to pair with a PO token provider plugin for GVS requests on
+  // datacenter IPs. android/web_creator (the previous choice) both require a
+  // PO token too, so they gained nothing from the plugin below.
+  '--extractor-args "youtube:player_client=android_vr,mweb"',
 ];
+
+if (existsSync(PLUGIN_DIR)) {
+  lines.push(`--plugin-dirs ${PLUGIN_DIR}`);
+  process.stderr.write(`Using YouTube PO token plugin dir: ${PLUGIN_DIR}\n`);
+}
 
 if (cookiesFile) {
   if (!existsSync(cookiesFile)) {
