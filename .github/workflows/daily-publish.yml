@@ -62,6 +62,10 @@ jobs:
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
       # Keep clips local so enhance script can process them
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
+      # Run 2 ffmpeg renders concurrently (1 thread each) on the 2-vCPU runner
+      OPENCLIPS_MAX_RENDER_JOBS: "2"
+      OPENCLIPS_FFMPEG_THREADS: "1"
+      OPENCLIPS_MAX_YTDLP_JOBS: "3"
 
     steps:
       - name: Checkout
