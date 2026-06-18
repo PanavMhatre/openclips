@@ -38,13 +38,14 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const ROSTER_PATH = path.join(ROOT_DIR, "references", "channel-roster.md");
 
 function parseArgs(argv) {
-  const args = { minDuration: 1200, limit: 1, total: Infinity, output: null };
+  const args = { minDuration: 1200, limit: 1, total: Infinity, output: null, roster: null };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "min-duration") args.minDuration = Number(val) || 1200;
     else if (key === "limit") args.limit = Number(val) || 1;
     else if (key === "total") args.total = Number(val) || 1;
     else if (key === "output") args.output = val;
+    else if (key === "roster") args.roster = val;
   }
   return args;
 }
@@ -124,11 +125,12 @@ async function ytDlpSearch(searchAlias, { minDuration, limit }) {
 async function main() {
   const args = parseArgs(process.argv);
 
+  const rosterFile = args.roster ? path.resolve(ROOT_DIR, args.roster) : ROSTER_PATH;
   let rosterMd;
   try {
-    rosterMd = readFileSync(ROSTER_PATH, "utf8");
+    rosterMd = readFileSync(rosterFile, "utf8");
   } catch {
-    process.stderr.write(`Error: could not read ${ROSTER_PATH}\n`);
+    process.stderr.write(`Error: could not read ${rosterFile}\n`);
     process.exit(1);
   }
 

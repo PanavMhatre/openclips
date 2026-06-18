@@ -1,0 +1,270 @@
+name: Sports Publish
+
+on:
+  schedule:
+    # Every 2 hours — posts one sports clip immediately each run
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (plan only, no Buffer posts)'
+        type: boolean
+        default: false
+      skip_fetch:
+        description: 'Skip YouTube fetch, use existing clip pool'
+        type: boolean
+        default: false
+      publish_date:
+        description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank to post immediately.'
+        type: string
+        default: ''
+      clip_count:
+        description: 'Number of clips to post per run'
+        type: string
+        default: '1'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    services:
+      bgutil-provider:
+        image: brainicism/bgutil-ytdlp-pot-provider
+        ports:
+          - 4416:4416
+
+    permissions:
+      contents: write
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
+      NVIDIA_DEEPSEEK_API_KEYS: ${{ secrets.NVIDIA_DEEPSEEK_API_KEYS }}
+      OPENCLIPS_RENDER_URL: ${{ secrets.OPENCLIPS_RENDER_URL }}
+      OPENCLIPS_FETCH_SECRET: ${{ secrets.OPENCLIPS_FETCH_SECRET }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      GITHUB_STORAGE_TOKEN: ${{ secrets.STORAGE_TOKEN }}
+      GITHUB_STORAGE_REPO: PanavMhatre/openclips-media
+      GITHUB_STORAGE_BRANCH: main
+      GITHUB_STORAGE_DIR: sports-clips
+      # TODO: add BUFFER_SPORTS_CHANNEL_IDS secret in repo settings
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+      BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_SPORTS_CHANNEL_IDS }}
+      # TODO: set these to your sports Buffer channel names once created
+      BUFFER_CHANNEL_INCLUDE: ${{ secrets.BUFFER_SPORTS_CHANNEL_INCLUDE }}
+      BUFFER_CHANNEL_EXCLUDE: ${{ secrets.BUFFER_SPORTS_CHANNEL_EXCLUDE }}
+      PORT: 3000
+      OPENCLIPS_GROQ_CHAT_MODEL: openai/gpt-oss-120b
+      OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
+      OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
+      OPENCLIPS_MAX_RENDER_JOBS: "2"
+      OPENCLIPS_FFMPEG_THREADS: "1"
+      OPENCLIPS_MAX_YTDLP_JOBS: "3"
+      OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Restore data cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/projects.json
+            data/clips
+            data/captions
+            data/thumbs
+            data/performance-signals.json
+            data/strategy-brief.md
+            data/buffer-ledger.json
+          key: openclips-sports-data-${{ github.run_id }}
+          restore-keys: |
+            openclips-sports-data-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install yt-dlp, ffmpeg & deno
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg unzip
+          # yt-dlp via pip — bgutil PO token plugin must share the same Python env
+          pip install yt-dlp bgutil-ytdlp-pot-provider --quiet
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          ffmpeg -version | head -1
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+
+      - name: Wait for PO token provider
+        run: |
+          yt-dlp --version
+          for i in $(seq 1 20); do
+            curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
+            sleep 1
+          done
+
+      - name: Setup yt-dlp config
+        run: node scripts/setup-ytdlp.mjs
+
+      - name: Start OpenClips server
+        run: |
+          node server/index.mjs &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 20); do
+            sleep 1
+            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.ffmpeg&&d.ytDlp&&d.groq?'ok':'bad')}catch{console.log('bad')}" 2>/dev/null || echo "bad")
+            if [ "$STATUS" = "ok" ]; then echo "Server healthy after ${i}s"; break; fi
+          done
+          curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
+
+      - name: Fetch newest sports videos
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        run: |
+          node scripts/latest-youtube-search.mjs \
+            --roster=references/sports-channel-roster.md \
+            --min-duration=120 \
+            --limit=1 \
+            --output=/tmp/oc-fresh-urls.json
+          echo "Videos queued:"
+          cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
+
+      - name: Submit & process videos
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        continue-on-error: true
+        run: |
+          node scripts/submit-openclips-projects.mjs \
+            --input=/tmp/oc-fresh-urls.json \
+            --poll-interval=15000 \
+            --timeout=18000000 \
+            --output=/tmp/oc-finished-projects.json
+
+      - name: Fetch performance analytics
+        run: |
+          node scripts/fetch-performance-analytics.mjs --output=data/performance-signals.json || true
+          if [ -f data/performance-signals.json ]; then
+            echo "Analytics loaded:"
+            node -e "const d=JSON.parse(require('fs').readFileSync('data/performance-signals.json','utf8'));console.log('  Posts analysed:',d.summary.zernioPostsAnalysed);console.log('  Top topics:',d.summary.topTopics?.join(', '))"
+          fi
+
+      - name: Rank top clips
+        run: |
+          TOP_N="${{ github.event.inputs.clip_count }}"
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-1}" --output=/tmp/oc-top8.json
+          echo "Top clips:"
+          cat /tmp/oc-top8.json | node -e "
+            const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+            clips.forEach((c,i)=>console.log(\`  \${i+1}. \${c.hook||c.title} (\${Math.round((c.duration||0))}s)\`))
+          "
+
+      - name: Download clips for enhancement
+        run: |
+          node -e "
+            const clips = JSON.parse(require('fs').readFileSync('/tmp/oc-top8.json','utf8'));
+            const https = require('https');
+            const http = require('http');
+            const fs = require('fs');
+            const path = require('path');
+            fs.mkdirSync('data/clips', { recursive: true });
+            let pending = 0;
+            for (const clip of clips) {
+              const url = clip.downloadUrl;
+              if (!url || !/^https?:\/\//i.test(url)) continue;
+              const dest = path.join('data/clips', path.basename(url));
+              if (fs.existsSync(dest)) { console.log('Already local:', path.basename(dest)); continue; }
+              pending++;
+              const mod = url.startsWith('https') ? https : http;
+              const file = fs.createWriteStream(dest);
+              mod.get(url, res => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); console.log('Downloaded:', path.basename(dest)); pending--; });
+              }).on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
+            }
+            const wait = () => { if (pending > 0) setTimeout(wait, 500); };
+            wait();
+          "
+
+      - name: Enhance clips with Pixabay images
+        timeout-minutes: 20
+        continue-on-error: true
+        run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
+
+      - name: Push enhanced clips to storage repo
+        run: |
+          CLIPS=$(cat /tmp/oc-top8.json | node -e "
+            const c=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+            c.forEach(x=>{ const f=x._fileName||require('path').basename(x._filePath||''); if(f) console.log(f); });
+          ")
+          if [ -z "$CLIPS" ]; then echo "No clip filenames found, skipping push."; exit 0; fi
+
+          git clone --depth 1 https://x-access-token:${{ secrets.STORAGE_TOKEN }}@github.com/PanavMhatre/openclips-media.git /tmp/storage-repo
+          mkdir -p /tmp/storage-repo/sports-clips
+
+          for CLIP in $CLIPS; do
+            SRC="data/clips/$CLIP"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "/tmp/storage-repo/sports-clips/$CLIP"
+              echo "Staged: $CLIP"
+            fi
+          done
+
+          cd /tmp/storage-repo
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add sports-clips/
+          git diff --staged --quiet && echo "No changes to push." || git commit -m "Sports clips $(date +%Y-%m-%d)" && git push
+
+      - name: Schedule to Buffer (dry run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then
+            MODE_ARG="--date=${{ github.event.inputs.publish_date }}"
+          else
+            MODE_ARG="--now"
+          fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run $MODE_ARG
+
+      - name: Schedule to Buffer (live)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then
+            MODE_ARG="--date=${{ github.event.inputs.publish_date }}"
+          else
+            MODE_ARG="--now"
+          fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $MODE_ARG
+
+      - name: Cleanup old source files
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: node scripts/cleanup-old-sources.mjs
+
+      - name: Save data cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/projects.json
+            data/clips
+            data/captions
+            data/thumbs
+            data/performance-signals.json
+            data/strategy-brief.md
+            data/buffer-ledger.json
+          key: openclips-sports-data-${{ github.run_id }}
+
+      - name: Upload ledger as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sports-ledger-${{ github.run_id }}
+          path: data/buffer-ledger.json
+          if-no-files-found: ignore
