@@ -99,24 +99,20 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg unzip
-          # yt-dlp
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod +x /usr/local/bin/yt-dlp
-          yt-dlp --version
+          # yt-dlp via pip — bgutil PO token plugin must share the same Python
+          # env as yt-dlp; standalone binary ignores pip site-packages entirely
+          pip install yt-dlp bgutil-ytdlp-pot-provider --quiet
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
           ffmpeg -version | head -1
           # Deno — required by yt-dlp to solve YouTube JS challenges
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Download YouTube PO token plugin
+      - name: Wait for PO token provider
         run: |
-          # GitHub-hosted runner IPs are blocked by YouTube's bot check.
-          # The bgutil-provider service container (started above) mints a real
-          # Proof-of-Origin token. We install the yt-dlp plugin via pip so it
-          # is discovered automatically — placing a zip in a custom --plugin-dirs
-          # path does NOT work because yt-dlp only auto-loads zips from its own
-          # default plugins directory (~/.yt-dlp/plugins/), not arbitrary dirs.
-          pip install bgutil-ytdlp-pot-provider --quiet
+          # Confirm pip-installed yt-dlp is in PATH (GITHUB_PATH updated by prev step)
+          yt-dlp --version
+          # Wait for bgutil service container to be ready
           for i in $(seq 1 20); do
             curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
             sleep 1
