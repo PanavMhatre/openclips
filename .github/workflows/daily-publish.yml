@@ -2,10 +2,8 @@ name: Daily Publish
 
 on:
   schedule:
-    # 1am CST = 7am UTC — starts June 12
-    - cron: '0 7 12-31 6 *'
-    - cron: '0 7 * 7-12 *'
-    - cron: '0 7 * 1-5 *'
+    # Every 2 hours — posts one clip immediately each run
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -17,13 +15,13 @@ on:
         type: boolean
         default: false
       publish_date:
-        description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank for the default "next open day" behavior.'
+        description: 'Force a specific publishing date (YYYY-MM-DD). Leave blank to post immediately.'
         type: string
         default: ''
       clip_count:
-        description: 'Number of clips to rank and schedule (use a small number to top up a partially-published day)'
+        description: 'Number of clips to post per run'
         type: string
-        default: '8'
+        default: '1'
 
 jobs:
   publish:
@@ -66,6 +64,8 @@ jobs:
       OPENCLIPS_MAX_RENDER_JOBS: "2"
       OPENCLIPS_FFMPEG_THREADS: "1"
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
+      # Persist ledger inside data/ so it survives in the GitHub Actions cache
+      OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
 
     steps:
       - name: Checkout
@@ -88,6 +88,7 @@ jobs:
             data/thumbs
             data/performance-signals.json
             data/strategy-brief.md
+            data/buffer-ledger.json
           key: openclips-data-${{ github.run_id }}
           restore-keys: |
             openclips-data-
@@ -231,16 +232,22 @@ jobs:
       - name: Schedule to Buffer (dry run)
         if: ${{ github.event.inputs.dry_run == 'true' }}
         run: |
-          DATE_ARG=""
-          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
-          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run $DATE_ARG
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then
+            MODE_ARG="--date=${{ github.event.inputs.publish_date }}"
+          else
+            MODE_ARG="--now"
+          fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json --dry-run $MODE_ARG
 
       - name: Schedule to Buffer (live)
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: |
-          DATE_ARG=""
-          if [ -n "${{ github.event.inputs.publish_date }}" ]; then DATE_ARG="--date=${{ github.event.inputs.publish_date }}"; fi
-          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $DATE_ARG
+          if [ -n "${{ github.event.inputs.publish_date }}" ]; then
+            MODE_ARG="--date=${{ github.event.inputs.publish_date }}"
+          else
+            MODE_ARG="--now"
+          fi
+          node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $MODE_ARG
 
       - name: Cleanup old source files
         if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -257,6 +264,7 @@ jobs:
             data/thumbs
             data/performance-signals.json
             data/strategy-brief.md
+            data/buffer-ledger.json
           key: openclips-data-${{ github.run_id }}
 
       - name: Upload ledger as artifact

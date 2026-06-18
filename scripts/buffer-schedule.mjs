@@ -56,6 +56,7 @@ function parseArgs(argv) {
   const args = {
     dryRun: false,
     undo: false,
+    now: false,
     clipsFile: null,
     date: null,
     timezone: "America/Chicago",
@@ -65,6 +66,7 @@ function parseArgs(argv) {
   for (const arg of argv.slice(2)) {
     if (arg === "--dry-run") { args.dryRun = true; continue; }
     if (arg === "--undo") { args.undo = true; continue; }
+    if (arg === "--now") { args.now = true; continue; }
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "clips") args.clipsFile = val;
     else if (key === "date") args.date = val;
@@ -72,6 +74,8 @@ function parseArgs(argv) {
     else if (key === "base-url") args.baseUrl = val;
     else if (key === "output") args.output = val;
   }
+  // Default to --now when no explicit date is given
+  if (!args.date && !args.undo) args.now = true;
   return args;
 }
 
@@ -391,35 +395,44 @@ async function main() {
     process.exit(1);
   }
 
-  // Determine publishing date
+  // Determine publishing date and build schedule plan
   const ledger = loadLedger();
-  const publishDate = args.date || nextPublishingDate(ledger, args.timezone);
-  const usedDates = ledgerDates(ledger);
+  let publishDate;
+  let plan;
 
-  if (!args.date && usedDates.has(publishDate)) {
-    process.stderr.write(`Error: ${publishDate} is already in the ledger. Choose a different date.\n`);
-    process.exit(1);
-  }
-
-  // Build schedule plan. If a slot's natural time has already passed (e.g. the
-  // pipeline ran late in the day), Buffer rejects it outright with "dueAt must
-  // be in the future" — instead, bump it forward to the next safe moment so the
-  // clip still gets published today rather than silently failing.
-  const MIN_LEAD_MS = 5 * 60 * 1000;
-  const now = Date.now();
-  let earliestNextMs = now + MIN_LEAD_MS;
-  const plan = top5.map((clip, i) => {
-    const slot = SLOT_TIMES[i] || SLOT_TIMES[SLOT_TIMES.length - 1];
-    let dueAtMs = new Date(slotToIso(publishDate, slot, args.timezone)).getTime();
-    if (dueAtMs < earliestNextMs) {
-      dueAtMs = earliestNextMs;
+  if (args.now) {
+    // Post immediately: clips spaced 2 minutes apart starting 2 minutes from now
+    publishDate = toDateString(new Date());
+    const START_LEAD_MS = 2 * 60 * 1000;
+    const CLIP_GAP_MS = 2 * 60 * 1000;
+    plan = top5.map((clip, i) => {
+      const dueAt = new Date(Date.now() + START_LEAD_MS + i * CLIP_GAP_MS).toISOString();
+      const mediaUrl = resolvePublicUrl(clip);
+      const text = buildPostText(clip);
+      return { slot: i + 1, clip, dueAt, mediaUrl, text };
+    });
+  } else {
+    // Legacy: pick next unused date and assign to fixed time slots
+    publishDate = args.date || nextPublishingDate(ledger, args.timezone);
+    const usedDates = ledgerDates(ledger);
+    if (args.date && usedDates.has(publishDate)) {
+      process.stderr.write(`Error: ${publishDate} is already in the ledger. Choose a different date.\n`);
+      process.exit(1);
     }
-    earliestNextMs = dueAtMs + MIN_LEAD_MS;
-    const dueAt = new Date(dueAtMs).toISOString();
-    const mediaUrl = resolvePublicUrl(clip);
-    const text = buildPostText(clip);
-    return { slot: i + 1, clip, dueAt, mediaUrl, text };
-  });
+    const MIN_LEAD_MS = 5 * 60 * 1000;
+    const nowMs = Date.now();
+    let earliestNextMs = nowMs + MIN_LEAD_MS;
+    plan = top5.map((clip, i) => {
+      const slot = SLOT_TIMES[i] || SLOT_TIMES[SLOT_TIMES.length - 1];
+      let dueAtMs = new Date(slotToIso(publishDate, slot, args.timezone)).getTime();
+      if (dueAtMs < earliestNextMs) dueAtMs = earliestNextMs;
+      earliestNextMs = dueAtMs + MIN_LEAD_MS;
+      const dueAt = new Date(dueAtMs).toISOString();
+      const mediaUrl = resolvePublicUrl(clip);
+      const text = buildPostText(clip);
+      return { slot: i + 1, clip, dueAt, mediaUrl, text };
+    });
+  }
 
   // Validate MP4 files exist locally
   for (const item of plan) {
@@ -432,18 +445,13 @@ async function main() {
     }
   }
 
-  // Print dry-run plan
-  process.stderr.write(`\nSchedule plan for ${publishDate} (${args.dryRun ? "DRY RUN" : "LIVE"}):\n`);
+  // Print plan
+  const modeLabel = args.now ? "POST NOW" : "SCHEDULED";
+  process.stderr.write(`\nSchedule plan for ${publishDate} (${args.dryRun ? "DRY RUN" : "LIVE"} / ${modeLabel}):\n`);
   process.stderr.write(`Channels: ${channelIds.length ? channelIds.join(", ") : "(not set)"}\n\n`);
   for (const item of plan) {
-    const natural = SLOT_TIMES[item.slot - 1];
-    const naturalIso = natural ? slotToIso(publishDate, natural, args.timezone) : null;
-    const bumped = naturalIso && new Date(naturalIso).getTime() !== new Date(item.dueAt).getTime();
-    const time = bumped
-      ? `${item.dueAt} (bumped — natural slot already passed)`
-      : `${String(natural?.hour).padStart(2, "0")}:${String(natural?.minute).padStart(2, "0")} ${args.timezone}`;
     process.stderr.write(
-      `  Slot ${item.slot} @ ${time} (${item.dueAt})\n` +
+      `  Slot ${item.slot} @ ${item.dueAt}\n` +
       `    Hook: "${item.clip.hook || item.clip.title}"\n` +
       `    File: ${item.clip._fileName || item.clip.filePath || "(unknown)"}\n` +
       `    URL:  ${item.mediaUrl || "(no public URL)"}\n\n`,
@@ -518,9 +526,9 @@ async function main() {
     process.exit(1);
   }
 
-  // Update ledger
+  // Update ledger — use datetime key in --now mode so multiple runs/day don't collide
   const ledgerEntry = {
-    date: publishDate,
+    date: args.now ? new Date().toISOString() : publishDate,
     clips: results,
     scheduledAt: new Date().toISOString(),
   };
