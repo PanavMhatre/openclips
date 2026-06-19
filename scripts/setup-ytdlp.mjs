@@ -33,9 +33,9 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // web: primary — supports cookies + EJS n-challenge solver.
-  // mweb: fallback — uses bgutil PO token for datacenter-IP bot-check bypass.
-  '--extractor-args "youtube:player_client=web,mweb"',
+  // mweb: primary — uses bgutil PO token for datacenter-IP bot-check bypass.
+  // web: secondary — uses cookies; if mweb runs first, bgutil token is always obtained.
+  '--extractor-args "youtube:player_client=mweb,web"',
   // Download the EJS challenge solver script from GitHub so yt-dlp can decode
   // the YouTube n-parameter.  Without this the n-challenge fails and yt-dlp
   // sees only throttled/image-only formats.
