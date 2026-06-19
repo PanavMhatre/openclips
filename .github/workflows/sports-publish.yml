@@ -113,6 +113,18 @@ jobs:
             sleep 1
           done
 
+      - name: Setup YouTube cookies
+        env:
+          COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
+        run: |
+          if [ -n "$COOKIES_B64" ]; then
+            echo "$COOKIES_B64" | base64 -d > /tmp/yt-cookies.txt
+            echo "YOUTUBE_COOKIES_FILE=/tmp/yt-cookies.txt" >> $GITHUB_ENV
+            echo "YouTube cookies loaded."
+          else
+            echo "Warning: YOUTUBE_COOKIES_B64 secret not set — bot-check likely."
+          fi
+
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
 
