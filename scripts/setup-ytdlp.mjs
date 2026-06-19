@@ -35,8 +35,7 @@ const lines = [
   "--retry-sleep 15",
   // web: primary — supports cookies, n-challenge solved by yt-dlp's built-in JS engine.
   // mweb: fallback — uses bgutil PO token for datacenter-IP bot-check bypass.
-  // tv_embedded: last resort with minimal anti-bot checks.
-  '--extractor-args "youtube:player_client=web,mweb,tv_embedded"',
+  '--extractor-args "youtube:player_client=web,mweb"',
 ];
 
 if (cookiesFile) {

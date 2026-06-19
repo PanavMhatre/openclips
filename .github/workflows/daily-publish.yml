@@ -149,7 +149,7 @@ jobs:
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         run: |
           # Render's datacenter IPs are blocked by YouTube for ytsearch — run locally
-          node scripts/latest-youtube-search.mjs --limit=1 --output=/tmp/oc-fresh-urls.json
+          node scripts/latest-youtube-search.mjs --total=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
