@@ -33,14 +33,15 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // mweb: primary — uses bgutil PO token for datacenter-IP bot-check bypass.
-  // web: secondary — uses cookies; if mweb runs first, bgutil token is always obtained.
+  // mweb: primary — bgutil ZIP plugin provides PO token for datacenter-IP bot bypass.
+  // web: fallback — uses cookies; Deno solves n-parameter JS challenge natively.
   '--extractor-args "youtube:player_client=mweb,web"',
-  // Download the EJS challenge solver script from GitHub so yt-dlp can decode
-  // the YouTube n-parameter.  Without this the n-challenge fails and yt-dlp
-  // sees only throttled/image-only formats.
-  "--remote-components ejs:github",
 ];
+
+if (existsSync(PLUGIN_DIR)) {
+  lines.push(`--plugin-dirs ${PLUGIN_DIR}`);
+  process.stderr.write(`Using YouTube PO token plugin dir: ${PLUGIN_DIR}\n`);
+}
 
 if (cookiesFile) {
   if (!existsSync(cookiesFile)) {
