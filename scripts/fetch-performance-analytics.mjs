@@ -45,7 +45,6 @@ function parseArgs() {
 }
 
 async function fetchJson(url, opts = {}) {
-  const { default: fetch } = await import("node-fetch");
   const res = await fetch(url, opts);
   const text = await res.text();
   try { return { status: res.status, data: JSON.parse(text) }; }

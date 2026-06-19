@@ -33,9 +33,13 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // web: primary — supports cookies, n-challenge solved by yt-dlp's built-in JS engine.
+  // web: primary — supports cookies + EJS n-challenge solver.
   // mweb: fallback — uses bgutil PO token for datacenter-IP bot-check bypass.
   '--extractor-args "youtube:player_client=web,mweb"',
+  // Download the EJS challenge solver script from GitHub so yt-dlp can decode
+  // the YouTube n-parameter.  Without this the n-challenge fails and yt-dlp
+  // sees only throttled/image-only formats.
+  "--remote-components ejs:github",
 ];
 
 if (cookiesFile) {
