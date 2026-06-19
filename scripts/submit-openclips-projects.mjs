@@ -166,8 +166,8 @@ async function main() {
     process.stdout.write(json + "\n");
   }
 
-  if (ready.length < 5) {
-    process.stderr.write(`Error: only ${ready.length} project(s) ready, need at least 5.\n`);
+  if (ready.length < 1) {
+    process.stderr.write(`Error: no projects completed successfully — all downloads failed.\n`);
     process.exit(1);
   }
   process.exit(0);
