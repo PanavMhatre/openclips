@@ -171,10 +171,10 @@ jobs:
             node -e "const d=JSON.parse(require('fs').readFileSync('data/performance-signals.json','utf8'));console.log('  Posts analysed:',d.summary.zernioPostsAnalysed);console.log('  YT channels:',d.summary.youtubeChannelsAnalysed);console.log('  Top topics:',d.summary.topTopics?.join(', '))"
           fi
 
-      - name: Rank top 8 clips
+      - name: Rank top clips
         run: |
           TOP_N="${{ github.event.inputs.clip_count }}"
-          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-8}" --output=/tmp/oc-top8.json
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-1}" --output=/tmp/oc-top8.json
           echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
@@ -284,5 +284,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: buffer-ledger-${{ github.run_id }}
-          path: ~/.codex/openclips-buffer-publisher-ledger.json
+          path: data/buffer-ledger.json
           if-no-files-found: ignore
