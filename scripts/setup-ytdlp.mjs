@@ -33,10 +33,10 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // mweb uses the bgutil PO token provider (pip-installed) so it passes
-  // YouTube's bot check on datacenter IPs. android_vr is a fallback that
-  // sometimes bypasses the check without a token; ios is a further fallback.
-  '--extractor-args "youtube:player_client=mweb,ios,android_vr"',
+  // web: primary — supports cookies, n-challenge solved by yt-dlp's built-in JS engine.
+  // mweb: fallback — uses bgutil PO token for datacenter-IP bot-check bypass.
+  // tv_embedded: last resort with minimal anti-bot checks.
+  '--extractor-args "youtube:player_client=web,mweb,tv_embedded"',
 ];
 
 if (cookiesFile) {
