@@ -2,8 +2,8 @@ name: Sports Publish
 
 on:
   schedule:
-    # Every 2 hours — posts one sports clip immediately each run
-    - cron: '0 */2 * * *'
+    # Every 2 hours offset by 30 min — posts one sports clip each run
+    - cron: '30 */2 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
