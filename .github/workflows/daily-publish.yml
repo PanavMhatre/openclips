@@ -132,6 +132,42 @@ jobs:
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
 
+      - name: Verify bgutil plugin and cookies
+        run: |
+          echo "=== yt-dlp version and plugins ==="
+          yt-dlp --version
+          python3 -c "
+          import sys, importlib, pkgutil
+          print('Python:', sys.version)
+          print('Scanning yt_dlp_plugins namespace:')
+          try:
+            import yt_dlp_plugins
+            for p in pkgutil.iter_modules(yt_dlp_plugins.__path__):
+              print(' ', p.name)
+          except Exception as e:
+            print('  ERROR:', e)
+          print('Checking bgutil importability:')
+          try:
+            import yt_dlp_plugins.extractor._bgutil as bg
+            print('  OK:', bg.__file__)
+          except Exception as e:
+            print('  NOT found via _bgutil:', e)
+          try:
+            import yt_dlp_plugins.extractor.pot._bgutil as bg2
+            print('  OK (pot path):', bg2.__file__)
+          except Exception as e:
+            print('  NOT found via pot._bgutil:', e)
+          "
+          echo "=== bgutil service smoke test ==="
+          curl -sv http://127.0.0.1:4416/ 2>&1 | head -20 || true
+          echo "=== Cookie file check ==="
+          if [ -f /tmp/yt-cookies.txt ]; then
+            echo "Cookie file exists, $(wc -l < /tmp/yt-cookies.txt) lines, $(stat -c%s /tmp/yt-cookies.txt) bytes"
+            grep -c "youtube.com" /tmp/yt-cookies.txt && echo "Contains youtube.com entries" || echo "WARNING: no youtube.com entries found"
+          else
+            echo "ERROR: no cookie file at /tmp/yt-cookies.txt"
+          fi
+
       - name: Start OpenClips server
         run: |
           node server/index.mjs &
