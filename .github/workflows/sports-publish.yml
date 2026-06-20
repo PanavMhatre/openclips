@@ -98,16 +98,26 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg unzip
-          # yt-dlp via pip — bgutil PO token plugin must share the same Python env
-          pip install yt-dlp bgutil-ytdlp-pot-provider --quiet
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Standalone yt-dlp binary — pip site-packages are NOT scanned for plugins;
+          # bgutil PO token plugin is loaded via --plugin-dirs (ZIP file) instead.
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+            -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
           ffmpeg -version | head -1
+          # Deno — used by yt-dlp to solve YouTube n-parameter JS challenges
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Wait for PO token provider
+      - name: Download bgutil PO token plugin
         run: |
+          # ZIP plugin lets the standalone yt-dlp binary find and load the bgutil
+          # provider; pip namespace packages are invisible to the standalone binary.
+          mkdir -p ~/.yt-dlp-plugins
+          curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
+            -o ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip
           yt-dlp --version
+          # Wait for bgutil service container to be ready
           for i in $(seq 1 20); do
             curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
             sleep 1
@@ -145,7 +155,7 @@ jobs:
           node scripts/latest-youtube-search.mjs \
             --roster=references/sports-channel-roster.md \
             --min-duration=120 \
-            --limit=1 \
+            --total=1 \
             --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
