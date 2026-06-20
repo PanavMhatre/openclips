@@ -98,15 +98,25 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg unzip python3-pip
-          # Install yt-dlp and bgutil PO token provider together via pip so they share
-          # the same Python environment — bgutil loads as a yt_dlp_plugins namespace
-          # package and contacts the bgutil service container (localhost:4416) for tokens.
           sudo pip3 install --break-system-packages yt-dlp bgutil-ytdlp-pot-provider
           yt-dlp --version
           ffmpeg -version | head -1
           # Deno — used by yt-dlp to solve YouTube n-parameter JS challenges
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
+          # Copy bgutil plugin into yt-dlp's config plugin dir so yt-dlp's own loader
+          # finds it regardless of Python namespace path issues with pip install locations.
+          BGU_PATH=$(pip3 show bgutil-ytdlp-pot-provider 2>/dev/null | grep Location | awk '{print $2}')
+          echo "bgutil pip location: ${BGU_PATH:-not found}"
+          if [ -n "$BGU_PATH" ] && [ -d "$BGU_PATH/yt_dlp_plugins" ]; then
+            mkdir -p ~/.config/yt-dlp
+            cp -r "$BGU_PATH/yt_dlp_plugins" ~/.config/yt-dlp/
+            echo "bgutil plugin copied to ~/.config/yt-dlp/yt_dlp_plugins"
+            find ~/.config/yt-dlp/yt_dlp_plugins -type f | head -10
+          else
+            echo "WARNING: yt_dlp_plugins dir not found under $BGU_PATH"
+            pip3 show -f bgutil-ytdlp-pot-provider 2>/dev/null | head -30 || true
+          fi
 
       - name: Wait for bgutil PO token service
         run: |
@@ -129,6 +139,23 @@ jobs:
 
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
+
+      - name: Verify bgutil plugin and cookies
+        run: |
+          echo "=== yt-dlp version ==="
+          yt-dlp --version
+          echo "=== bgutil plugin files in yt-dlp config dir ==="
+          find ~/.config/yt-dlp/yt_dlp_plugins -type f 2>/dev/null || echo "WARNING: no bgutil plugin files in ~/.config/yt-dlp/yt_dlp_plugins"
+          echo "=== bgutil service smoke test ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4416/ 2>/dev/null)
+          echo "bgutil HTTP status: $STATUS (any response = service is up)"
+          echo "=== Cookie file check ==="
+          if [ -f /tmp/yt-cookies.txt ]; then
+            echo "Cookie file: $(wc -l < /tmp/yt-cookies.txt) lines, $(stat -c%s /tmp/yt-cookies.txt) bytes"
+            grep -c "youtube.com" /tmp/yt-cookies.txt && echo "Contains youtube.com entries" || echo "WARNING: no youtube.com entries found"
+          else
+            echo "ERROR: no cookie file at /tmp/yt-cookies.txt"
+          fi
 
       - name: Start OpenClips server
         run: |
