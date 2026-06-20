@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,16 @@ const ROOT_DIR = path.resolve(__dirname, "..");
   const localBin = path.join(process.env.HOME || "/root", ".local", "bin");
   if (!process.env.PATH?.includes(localBin)) {
     process.env.PATH = `${localBin}:${process.env.PATH || ""}`;
+  }
+  // If a system-wide yt-dlp binary already exists (e.g. installed in CI before server
+  // starts), skip auto-install so we don't shadow it with a copy that lacks the bgutil
+  // PO token plugin support.
+  const systemBin = ["/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"].find(p => {
+    try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
+  });
+  if (systemBin) {
+    console.log("[ytdlp] found system binary at", systemBin, "— skipping auto-install");
+    return;
   }
   const ytdlpPath = path.join(localBin, "yt-dlp");
   try {
@@ -68,8 +79,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
     "--max-sleep-interval 8",
     "--retries 5",
     "--retry-sleep 15",
-    "--extractor-args \"youtube:player_client=mweb,web\"",
-    "--remote-components ejs:github",
+    "--extractor-args youtube:player_client=mweb,web,android",
     `--cookies ${cookiePath}`,
   ].join("\n");
   await fsp.writeFile(configPath, config, "utf8");
@@ -569,12 +579,26 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   const minDuration = Number(req.body?.minDuration || 1200);
   const limitPerChannel = Number(req.body?.limit || 1);
 
-  // Parse channel roster
+  // If caller passes base64-encoded cookies, write them to a temp file for this job
+  let fetchCookiesPath = null;
+  const cookiesB64 = req.body?.cookiesB64;
+  if (cookiesB64) {
+    try {
+      fetchCookiesPath = path.join(os.tmpdir(), `yt-cookies-fetch-${crypto.randomUUID()}.txt`);
+      await fsp.writeFile(fetchCookiesPath, Buffer.from(cookiesB64, "base64").toString("utf8"));
+    } catch (e) {
+      console.warn("[fetch-videos] failed to write caller-supplied cookies:", e.message);
+      fetchCookiesPath = null;
+    }
+  }
+
+  // Parse channel roster — "sports" selects the sports roster, default is the podcast roster
+  const rosterFile = req.body?.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
   let rosterMd;
   try {
-    rosterMd = fs.readFileSync(path.join(ROOT_DIR, "references", "channel-roster.md"), "utf8");
+    rosterMd = fs.readFileSync(path.join(ROOT_DIR, "references", rosterFile), "utf8");
   } catch {
-    return res.status(500).json({ error: "channel-roster.md not found" });
+    return res.status(500).json({ error: `${rosterFile} not found` });
   }
 
   const channels = [];
@@ -603,8 +627,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
       const args = [
         "--no-check-certificate", "--no-playlist", "--flat-playlist",
         "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
-        "--no-warnings", `ytsearch${fetchCount}:${alias}`,
+        "--no-warnings",
       ];
+      if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+      args.push(`ytsearch${fetchCount}:${alias}`);
       const proc = spawn("yt-dlp", args, { timeout: 60000 });
       let out = "";
       proc.stdout.on("data", d => out += d);
@@ -656,8 +682,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
       await new Promise((resolve, reject) => {
         const args = [
           "--no-check-certificate", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-          "--merge-output-format", "mp4", "-o", outPath, "--no-playlist", video.url,
+          "--merge-output-format", "mp4", "-o", outPath, "--no-playlist",
         ];
+        if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+        args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 600000 });
         proc.on("close", code => code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}`)));
         proc.on("error", reject);
@@ -702,6 +730,8 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   } catch (err) {
     console.error(`[fetch-videos] job ${jobId} crashed:`, err.message);
     fetchJobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+  } finally {
+    if (fetchCookiesPath) fsp.unlink(fetchCookiesPath).catch(() => {});
   }
 });
 
@@ -2771,6 +2801,20 @@ async function canRunFaceDetection() {
 
 async function downloadVideo(sourceUrl, projectId) {
   if (!sourceUrl) throw new Error("No source URL provided.");
+
+  // Raw video file URLs (e.g. GitHub raw storage) — download via curl, skip yt-dlp
+  const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|avi|m4v)(\?[^?]*)?$/i;
+  if (VIDEO_EXT_RE.test(sourceUrl) && !/youtube\.com|youtu\.be|vimeo\.com|twitch\.tv/i.test(sourceUrl)) {
+    const extMatch = sourceUrl.match(/\.(mp4|mkv|webm|mov|avi|m4v)/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "mp4";
+    const destPath = path.join(UPLOAD_DIR, `${projectId}-source.${ext}`);
+    process.stdout.write(`[download] direct file URL — downloading via curl: ${sourceUrl.slice(0, 80)}\n`);
+    await runCommand("curl", ["-fsSL", "--max-time", "1200", "-o", destPath, sourceUrl], { timeoutMs: 1000 * 60 * 25 });
+    const basename = decodeURIComponent(path.basename(sourceUrl).replace(/\?.*$/, ""));
+    const title = basename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+    return { sourcePath: destPath, title, channel: "", uploader: "", description: "" };
+  }
+
   const template = path.join(UPLOAD_DIR, `${projectId}-source.%(ext)s`);
   let title = "";
   let channel = "";

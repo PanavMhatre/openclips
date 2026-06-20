@@ -65,6 +65,7 @@ jobs:
       OPENCLIPS_FFMPEG_THREADS: "1"
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
       OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
+      YTDLP_PROXIES: ${{ secrets.YTDLP_PROXIES }}
 
     steps:
       - name: Checkout
@@ -97,28 +98,30 @@ jobs:
       - name: Install yt-dlp, ffmpeg & deno
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg unzip
-          # Standalone yt-dlp binary — pip site-packages are NOT scanned for plugins;
-          # bgutil PO token plugin is loaded via --plugin-dirs (ZIP file) instead.
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-            -o /usr/local/bin/yt-dlp
-          sudo chmod +x /usr/local/bin/yt-dlp
+          sudo apt-get install -y ffmpeg unzip python3-pip
+          sudo pip3 install --break-system-packages yt-dlp bgutil-ytdlp-pot-provider
           yt-dlp --version
           ffmpeg -version | head -1
           # Deno — used by yt-dlp to solve YouTube n-parameter JS challenges
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
+          # Copy bgutil plugin into yt-dlp's config plugin dir so yt-dlp's own loader
+          # finds it regardless of Python namespace path issues with pip install locations.
+          BGU_PATH=$(pip3 show bgutil-ytdlp-pot-provider 2>/dev/null | grep Location | awk '{print $2}')
+          echo "bgutil pip location: ${BGU_PATH:-not found}"
+          if [ -n "$BGU_PATH" ] && [ -d "$BGU_PATH/yt_dlp_plugins" ]; then
+            mkdir -p ~/.config/yt-dlp/plugins/bgutil
+            cp -r "$BGU_PATH/yt_dlp_plugins" ~/.config/yt-dlp/plugins/bgutil/
+            echo "bgutil plugin copied to ~/.config/yt-dlp/plugins/bgutil/yt_dlp_plugins"
+            find ~/.config/yt-dlp/plugins/bgutil -type f | head -10
+          else
+            echo "WARNING: yt_dlp_plugins dir not found under $BGU_PATH"
+            pip3 show -f bgutil-ytdlp-pot-provider 2>/dev/null | head -30 || true
+          fi
 
-      - name: Download bgutil PO token plugin
+      - name: Wait for bgutil PO token service
         run: |
-          # ZIP plugin lets the standalone yt-dlp binary find and load the bgutil
-          # provider; pip namespace packages are invisible to the standalone binary.
-          mkdir -p ~/.yt-dlp-plugins
-          curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
-            -o ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip
-          yt-dlp --version
-          # Wait for bgutil service container to be ready
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
             sleep 1
           done
@@ -138,6 +141,52 @@ jobs:
       - name: Setup yt-dlp config
         run: node scripts/setup-ytdlp.mjs
 
+      - name: Verify bgutil plugin and cookies
+        run: |
+          echo "=== yt-dlp version ==="
+          yt-dlp --version
+          echo "=== yt-dlp config file ==="
+          cat ~/.config/yt-dlp/config || echo "WARNING: no config file"
+          echo "=== bgutil plugin files in yt-dlp config dir ==="
+          find ~/.config/yt-dlp/plugins/bgutil -type f 2>/dev/null || echo "WARNING: no bgutil plugin files in ~/.config/yt-dlp/plugins/bgutil"
+          echo "=== bgutil Python import test ==="
+          python3 - <<'PYEOF'
+          import sys, traceback
+          sys.path.insert(0, '/home/runner/.config/yt-dlp/plugins/bgutil')
+          try:
+              from yt_dlp_plugins.extractor.getpot_bgutil import BgUtilPTPBase
+              print("OK: getpot_bgutil base imported")
+          except Exception as e:
+              print(f"FAIL getpot_bgutil: {type(e).__name__}: {e}")
+              traceback.print_exc()
+          try:
+              from yt_dlp_plugins.extractor.getpot_bgutil_http import BgUtilHTTPPTP
+              print("OK: getpot_bgutil_http imported")
+          except Exception as e:
+              print(f"FAIL getpot_bgutil_http: {type(e).__name__}: {e}")
+              traceback.print_exc()
+          try:
+              from yt_dlp.extractor.youtube.pot._registry import _pot_providers
+              providers = list(_pot_providers.value.keys())
+              print(f"POT providers registered: {providers}")
+          except Exception as e:
+              print(f"FAIL registry: {type(e).__name__}: {e}")
+          PYEOF
+          echo "=== yt-dlp verbose on public video (skip download) ==="
+          yt-dlp --verbose --skip-download \
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | \
+            grep -iE "PO Token|PoToken|provider|plugin|bgutil|GetPOT|pot_provider" | head -30 || true
+          echo "=== bgutil service smoke test ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4416/ 2>/dev/null)
+          echo "bgutil HTTP status: $STATUS (any response = service is up)"
+          echo "=== Cookie file check ==="
+          if [ -f /tmp/yt-cookies.txt ]; then
+            echo "Cookie file: $(wc -l < /tmp/yt-cookies.txt) lines, $(stat -c%s /tmp/yt-cookies.txt) bytes"
+            grep -c "youtube.com" /tmp/yt-cookies.txt && echo "Contains youtube.com entries" || echo "WARNING: no youtube.com entries found"
+          else
+            echo "ERROR: no cookie file at /tmp/yt-cookies.txt"
+          fi
+
       - name: Start OpenClips server
         run: |
           node server/index.mjs &
@@ -149,14 +198,12 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
-      - name: Fetch newest sports videos
+      - name: Fetch newest sports videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        env:
+          COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          node scripts/latest-youtube-search.mjs \
-            --roster=references/sports-channel-roster.md \
-            --min-duration=120 \
-            --total=1 \
-            --output=/tmp/oc-fresh-urls.json
+          node scripts/fetch-via-render.mjs --roster=sports --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
