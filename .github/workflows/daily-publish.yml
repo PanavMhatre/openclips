@@ -202,6 +202,8 @@ jobs:
 
       - name: Fetch newest YouTube videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        env:
+          COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
           node scripts/fetch-via-render.mjs --total=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"

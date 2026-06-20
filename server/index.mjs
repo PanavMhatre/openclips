@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -579,6 +580,19 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   const minDuration = Number(req.body?.minDuration || 1200);
   const limitPerChannel = Number(req.body?.limit || 1);
 
+  // If caller passes base64-encoded cookies, write them to a temp file for this job
+  let fetchCookiesPath = null;
+  const cookiesB64 = req.body?.cookiesB64;
+  if (cookiesB64) {
+    try {
+      fetchCookiesPath = path.join(os.tmpdir(), `yt-cookies-fetch-${crypto.randomUUID()}.txt`);
+      await fsp.writeFile(fetchCookiesPath, Buffer.from(cookiesB64, "base64").toString("utf8"));
+    } catch (e) {
+      console.warn("[fetch-videos] failed to write caller-supplied cookies:", e.message);
+      fetchCookiesPath = null;
+    }
+  }
+
   // Parse channel roster — "sports" selects the sports roster, default is the podcast roster
   const rosterFile = req.body?.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
   let rosterMd;
@@ -614,8 +628,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
       const args = [
         "--no-check-certificate", "--no-playlist", "--flat-playlist",
         "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
-        "--no-warnings", `ytsearch${fetchCount}:${alias}`,
+        "--no-warnings",
       ];
+      if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+      args.push(`ytsearch${fetchCount}:${alias}`);
       const proc = spawn("yt-dlp", args, { timeout: 60000 });
       let out = "";
       proc.stdout.on("data", d => out += d);
@@ -667,8 +683,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
       await new Promise((resolve, reject) => {
         const args = [
           "--no-check-certificate", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-          "--merge-output-format", "mp4", "-o", outPath, "--no-playlist", video.url,
+          "--merge-output-format", "mp4", "-o", outPath, "--no-playlist",
         ];
+        if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+        args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 600000 });
         proc.on("close", code => code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}`)));
         proc.on("error", reject);
@@ -713,6 +731,8 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   } catch (err) {
     console.error(`[fetch-videos] job ${jobId} crashed:`, err.message);
     fetchJobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+  } finally {
+    if (fetchCookiesPath) fsp.unlink(fetchCookiesPath).catch(() => {});
   }
 });
 

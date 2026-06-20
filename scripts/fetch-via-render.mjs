@@ -42,6 +42,7 @@ async function main() {
 
   const renderUrl = (process.env.OPENCLIPS_RENDER_URL || "").replace(/\/+$/, "");
   const secret = process.env.OPENCLIPS_FETCH_SECRET || "";
+  const cookiesB64 = process.env.COOKIES_B64 || "";
 
   if (!renderUrl) {
     process.stderr.write("Error: OPENCLIPS_RENDER_URL is not set.\n");
@@ -55,6 +56,11 @@ async function main() {
     `Requesting Render server to fetch videos (roster=${args.roster}, total=${args.total}, minDuration=${args.minDuration}s)...\n`,
   );
   process.stderr.write(`Render URL: ${renderUrl}\n`);
+  if (cookiesB64) {
+    process.stderr.write("Forwarding YouTube cookies to Render server.\n");
+  } else {
+    process.stderr.write("Warning: COOKIES_B64 not set — Render will use its own cookies (may fail).\n");
+  }
 
   // Start fetch job on the Render server
   let jobId;
@@ -62,7 +68,12 @@ async function main() {
     const postRes = await fetch(`${renderUrl}/api/fetch-videos`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ roster: args.roster, minDuration: args.minDuration, limit: args.total }),
+      body: JSON.stringify({
+        roster: args.roster,
+        minDuration: args.minDuration,
+        limit: args.total,
+        ...(cookiesB64 ? { cookiesB64 } : {}),
+      }),
     });
     if (!postRes.ok) {
       const body = await postRes.text();
