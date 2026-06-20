@@ -65,6 +65,7 @@ jobs:
       OPENCLIPS_FFMPEG_THREADS: "1"
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
       OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
+      YTDLP_PROXIES: ${{ secrets.YTDLP_PROXIES }}
 
     steps:
       - name: Checkout

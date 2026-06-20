@@ -66,6 +66,7 @@ jobs:
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
       # Persist ledger inside data/ so it survives in the GitHub Actions cache
       OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
+      YTDLP_PROXIES: ${{ secrets.YTDLP_PROXIES }}
 
     steps:
       - name: Checkout

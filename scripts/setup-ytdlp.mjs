@@ -11,6 +11,12 @@
  * Environment variables:
  *   YOUTUBE_COOKIES_FILE  Path to a Netscape-format cookies.txt for YouTube auth.
  *                         Defaults to ~/.config/yt-dlp/cookies.txt if that file exists.
+ *   YTDLP_PROXIES         Comma- or newline-separated list of HTTP proxy URLs.
+ *                         Format: http://user:pass@host:port
+ *                         A random proxy is selected per run to distribute load.
+ *                         NOTE: Webshare free proxies are 1 GB/month each — a
+ *                         single long podcast download can be 250-600 MB. Monitor
+ *                         bandwidth and upgrade if running daily.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -50,6 +56,19 @@ if (cookiesFile) {
   process.stderr.write(
     "No YouTube cookies file found. Cloud/CI environments will fail with HTTP 429.\n" +
     `Export cookies from a signed-in browser and place them at: ${DEFAULT_COOKIES}\n`,
+  );
+}
+
+// Proxy rotation — pick one proxy at random to distribute 1 GB/month per-proxy budget
+const proxiesRaw = process.env.YTDLP_PROXIES || "";
+const proxies = proxiesRaw.split(/[,\n]/).map((p) => p.trim()).filter(Boolean);
+if (proxies.length) {
+  const proxy = proxies[Math.floor(Math.random() * proxies.length)];
+  lines.push(`--proxy ${proxy}`);
+  process.stderr.write(`Using proxy: ${proxy.replace(/:([^:@]+)@/, ":***@")}\n`);
+} else {
+  process.stderr.write(
+    "No YTDLP_PROXIES set — downloads use the runner's datacenter IP (likely blocked by YouTube).\n",
   );
 }
 
