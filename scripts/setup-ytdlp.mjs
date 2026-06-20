@@ -32,10 +32,11 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // mweb: primary — bgutil-ytdlp-pot-provider (pip-installed alongside yt-dlp) supplies
-  //   PO tokens via the bgutil service container at localhost:4416 for datacenter-IP bypass.
-  // web: fallback — uses cookies; Deno solves n-parameter JS challenge natively.
-  '--extractor-args "youtube:player_client=mweb,web"',
+  // tv_embedded: YouTube's TV embedded player API — not bot-checked from datacenter IPs,
+  //   requires no PO tokens or cookies for public content.
+  // ios: iOS app client — second bypass layer, no PO tokens needed.
+  // web: last resort with cookies; bgutil may provide PO tokens if the plugin API is compatible.
+  '--extractor-args "youtube:player_client=tv_embedded,ios,web"',
 ];
 
 if (cookiesFile) {
