@@ -20,6 +20,16 @@ const ROOT_DIR = path.resolve(__dirname, "..");
   if (!process.env.PATH?.includes(localBin)) {
     process.env.PATH = `${localBin}:${process.env.PATH || ""}`;
   }
+  // If a system-wide yt-dlp binary already exists (e.g. installed in CI before server
+  // starts), skip auto-install so we don't shadow it with a copy that lacks the bgutil
+  // PO token plugin support.
+  const systemBin = ["/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"].find(p => {
+    try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
+  });
+  if (systemBin) {
+    console.log("[ytdlp] found system binary at", systemBin, "— skipping auto-install");
+    return;
+  }
   const ytdlpPath = path.join(localBin, "yt-dlp");
   try {
     await fsp.access(ytdlpPath, fs.constants.X_OK);

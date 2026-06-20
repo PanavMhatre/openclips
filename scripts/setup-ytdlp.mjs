@@ -20,7 +20,6 @@ import path from "node:path";
 const CONFIG_DIR = path.join(homedir(), ".config", "yt-dlp");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config");
 const DEFAULT_COOKIES = path.join(CONFIG_DIR, "cookies.txt");
-const PLUGIN_DIR = path.join(homedir(), ".yt-dlp-plugins");
 
 const cookiesFile =
   process.env.YOUTUBE_COOKIES_FILE ||
@@ -33,15 +32,13 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // mweb: primary — bgutil ZIP plugin provides PO token for datacenter-IP bot bypass.
+  // mweb: primary — bgutil ZIP plugin (placed in ~/.yt-dlp-plugins/ and
+  //   ~/.config/yt-dlp/plugins/ by CI) provides PO token for datacenter-IP bot bypass.
   // web: fallback — uses cookies; Deno solves n-parameter JS challenge natively.
+  // NOTE: --plugin-dirs is NOT recognised when set in a config file (yt-dlp limitation);
+  //   ZIPs must live in the default search dirs.
   '--extractor-args "youtube:player_client=mweb,web"',
 ];
-
-if (existsSync(PLUGIN_DIR)) {
-  lines.push(`--plugin-dirs ${PLUGIN_DIR}`);
-  process.stderr.write(`Using YouTube PO token plugin dir: ${PLUGIN_DIR}\n`);
-}
 
 if (cookiesFile) {
   if (!existsSync(cookiesFile)) {

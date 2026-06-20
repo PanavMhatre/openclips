@@ -113,9 +113,12 @@ jobs:
         run: |
           # ZIP plugin lets the standalone yt-dlp binary find and load the bgutil
           # provider; pip namespace packages are invisible to the standalone binary.
+          # Place in both default search locations so yt-dlp finds it regardless of version.
           mkdir -p ~/.yt-dlp-plugins
+          mkdir -p ~/.config/yt-dlp/plugins
           curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
             -o ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip
+          cp ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip ~/.config/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip
           yt-dlp --version
           # Wait for bgutil service container to be ready
           for i in $(seq 1 20); do
