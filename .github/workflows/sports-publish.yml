@@ -97,31 +97,20 @@ jobs:
       - name: Install yt-dlp, ffmpeg & deno
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg unzip
-          # Standalone yt-dlp binary — pip site-packages are NOT scanned for plugins;
-          # bgutil PO token plugin is loaded via --plugin-dirs (ZIP file) instead.
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-            -o /usr/local/bin/yt-dlp
-          sudo chmod +x /usr/local/bin/yt-dlp
+          sudo apt-get install -y ffmpeg unzip python3-pip
+          # Install yt-dlp and bgutil PO token provider together via pip so they share
+          # the same Python environment — bgutil loads as a yt_dlp_plugins namespace
+          # package and contacts the bgutil service container (localhost:4416) for tokens.
+          sudo pip3 install --break-system-packages yt-dlp bgutil-ytdlp-pot-provider
           yt-dlp --version
           ffmpeg -version | head -1
           # Deno — used by yt-dlp to solve YouTube n-parameter JS challenges
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Download bgutil PO token plugin
+      - name: Wait for bgutil PO token service
         run: |
-          # ZIP plugin lets the standalone yt-dlp binary find and load the bgutil
-          # provider; pip namespace packages are invisible to the standalone binary.
-          # Place in both default search locations so yt-dlp finds it regardless of version.
-          mkdir -p ~/.yt-dlp-plugins
-          mkdir -p ~/.config/yt-dlp/plugins
-          curl -L https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip \
-            -o ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip
-          cp ~/.yt-dlp-plugins/bgutil-ytdlp-pot-provider.zip ~/.config/yt-dlp/plugins/bgutil-ytdlp-pot-provider.zip
-          yt-dlp --version
-          # Wait for bgutil service container to be ready
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             curl -s -o /dev/null http://127.0.0.1:4416/ && { echo "POT provider ready after ${i}s"; break; }
             sleep 1
           done

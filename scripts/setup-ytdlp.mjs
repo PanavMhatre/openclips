@@ -32,11 +32,9 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // mweb: primary — bgutil ZIP plugin (placed in ~/.yt-dlp-plugins/ and
-  //   ~/.config/yt-dlp/plugins/ by CI) provides PO token for datacenter-IP bot bypass.
+  // mweb: primary — bgutil-ytdlp-pot-provider (pip-installed alongside yt-dlp) supplies
+  //   PO tokens via the bgutil service container at localhost:4416 for datacenter-IP bypass.
   // web: fallback — uses cookies; Deno solves n-parameter JS challenge natively.
-  // NOTE: --plugin-dirs is NOT recognised when set in a config file (yt-dlp limitation);
-  //   ZIPs must live in the default search dirs.
   '--extractor-args "youtube:player_client=mweb,web"',
 ];
 
