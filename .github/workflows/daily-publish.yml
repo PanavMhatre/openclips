@@ -200,11 +200,10 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
-      - name: Fetch newest YouTube videos
+      - name: Fetch newest YouTube videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         run: |
-          # Render's datacenter IPs are blocked by YouTube for ytsearch — run locally
-          node scripts/latest-youtube-search.mjs --total=1 --output=/tmp/oc-fresh-urls.json
+          node scripts/fetch-via-render.mjs --total=1 --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 

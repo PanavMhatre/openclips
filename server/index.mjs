@@ -579,12 +579,13 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
   const minDuration = Number(req.body?.minDuration || 1200);
   const limitPerChannel = Number(req.body?.limit || 1);
 
-  // Parse channel roster
+  // Parse channel roster — "sports" selects the sports roster, default is the podcast roster
+  const rosterFile = req.body?.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
   let rosterMd;
   try {
-    rosterMd = fs.readFileSync(path.join(ROOT_DIR, "references", "channel-roster.md"), "utf8");
+    rosterMd = fs.readFileSync(path.join(ROOT_DIR, "references", rosterFile), "utf8");
   } catch {
-    return res.status(500).json({ error: "channel-roster.md not found" });
+    return res.status(500).json({ error: `${rosterFile} not found` });
   }
 
   const channels = [];
@@ -2781,6 +2782,20 @@ async function canRunFaceDetection() {
 
 async function downloadVideo(sourceUrl, projectId) {
   if (!sourceUrl) throw new Error("No source URL provided.");
+
+  // Raw video file URLs (e.g. GitHub raw storage) — download via curl, skip yt-dlp
+  const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|avi|m4v)(\?[^?]*)?$/i;
+  if (VIDEO_EXT_RE.test(sourceUrl) && !/youtube\.com|youtu\.be|vimeo\.com|twitch\.tv/i.test(sourceUrl)) {
+    const extMatch = sourceUrl.match(/\.(mp4|mkv|webm|mov|avi|m4v)/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "mp4";
+    const destPath = path.join(UPLOAD_DIR, `${projectId}-source.${ext}`);
+    process.stdout.write(`[download] direct file URL — downloading via curl: ${sourceUrl.slice(0, 80)}\n`);
+    await runCommand("curl", ["-fsSL", "--max-time", "1200", "-o", destPath, sourceUrl], { timeoutMs: 1000 * 60 * 25 });
+    const basename = decodeURIComponent(path.basename(sourceUrl).replace(/\?.*$/, ""));
+    const title = basename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+    return { sourcePath: destPath, title, channel: "", uploader: "", description: "" };
+  }
+
   const template = path.join(UPLOAD_DIR, `${projectId}-source.%(ext)s`);
   let title = "";
   let channel = "";
