@@ -109,10 +109,10 @@ jobs:
           BGU_PATH=$(pip3 show bgutil-ytdlp-pot-provider 2>/dev/null | grep Location | awk '{print $2}')
           echo "bgutil pip location: ${BGU_PATH:-not found}"
           if [ -n "$BGU_PATH" ] && [ -d "$BGU_PATH/yt_dlp_plugins" ]; then
-            mkdir -p ~/.config/yt-dlp
-            cp -r "$BGU_PATH/yt_dlp_plugins" ~/.config/yt-dlp/
-            echo "bgutil plugin copied to ~/.config/yt-dlp/yt_dlp_plugins"
-            find ~/.config/yt-dlp/yt_dlp_plugins -type f | head -10
+            mkdir -p ~/.config/yt-dlp/plugins/bgutil
+            cp -r "$BGU_PATH/yt_dlp_plugins" ~/.config/yt-dlp/plugins/bgutil/
+            echo "bgutil plugin copied to ~/.config/yt-dlp/plugins/bgutil/yt_dlp_plugins"
+            find ~/.config/yt-dlp/plugins/bgutil -type f | head -10
           else
             echo "WARNING: yt_dlp_plugins dir not found under $BGU_PATH"
             pip3 show -f bgutil-ytdlp-pot-provider 2>/dev/null | head -30 || true
@@ -145,7 +145,9 @@ jobs:
           echo "=== yt-dlp version ==="
           yt-dlp --version
           echo "=== bgutil plugin files in yt-dlp config dir ==="
-          find ~/.config/yt-dlp/yt_dlp_plugins -type f 2>/dev/null || echo "WARNING: no bgutil plugin files in ~/.config/yt-dlp/yt_dlp_plugins"
+          find ~/.config/yt-dlp/plugins/bgutil -type f 2>/dev/null || echo "WARNING: no bgutil plugin files in ~/.config/yt-dlp/plugins/bgutil"
+          echo "=== yt-dlp plugin loading check ==="
+          yt-dlp --verbose 2>&1 | grep -iE "plugin|bgutil|pot|getpot" | head -20 || true
           echo "=== bgutil service smoke test ==="
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4416/ 2>/dev/null)
           echo "bgutil HTTP status: $STATUS (any response = service is up)"

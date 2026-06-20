@@ -32,11 +32,11 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // tv_embedded: YouTube's TV embedded player API — not bot-checked from datacenter IPs,
-  //   requires no PO tokens or cookies for public content.
-  // ios: iOS app client — second bypass layer, no PO tokens needed.
-  // web: last resort with cookies; bgutil may provide PO tokens if the plugin API is compatible.
-  '--extractor-args "youtube:player_client=tv_embedded,ios,web"',
+  // web: full browser client — uses cookies + bgutil PO tokens from datacenter IPs.
+  // mweb: mobile web — uses cookies, good fallback if web is blocked.
+  // android: Android app client — uses cookies, bypasses some rate limits.
+  // Note: ios is intentionally excluded — it ignores cookies entirely.
+  '--extractor-args "youtube:player_client=web,mweb,android"',
 ];
 
 if (cookiesFile) {
