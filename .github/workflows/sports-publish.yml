@@ -144,10 +144,37 @@ jobs:
         run: |
           echo "=== yt-dlp version ==="
           yt-dlp --version
+          echo "=== yt-dlp config file ==="
+          cat ~/.config/yt-dlp/config || echo "WARNING: no config file"
           echo "=== bgutil plugin files in yt-dlp config dir ==="
           find ~/.config/yt-dlp/plugins/bgutil -type f 2>/dev/null || echo "WARNING: no bgutil plugin files in ~/.config/yt-dlp/plugins/bgutil"
-          echo "=== yt-dlp plugin loading check ==="
-          yt-dlp --verbose 2>&1 | grep -iE "plugin|bgutil|pot|getpot" | head -20 || true
+          echo "=== bgutil Python import test ==="
+          python3 - <<'PYEOF'
+          import sys, traceback
+          sys.path.insert(0, '/home/runner/.config/yt-dlp/plugins/bgutil')
+          try:
+              from yt_dlp_plugins.extractor.getpot_bgutil import BgUtilPTPBase
+              print("OK: getpot_bgutil base imported")
+          except Exception as e:
+              print(f"FAIL getpot_bgutil: {type(e).__name__}: {e}")
+              traceback.print_exc()
+          try:
+              from yt_dlp_plugins.extractor.getpot_bgutil_http import BgUtilHTTPPTP
+              print("OK: getpot_bgutil_http imported")
+          except Exception as e:
+              print(f"FAIL getpot_bgutil_http: {type(e).__name__}: {e}")
+              traceback.print_exc()
+          try:
+              from yt_dlp.extractor.youtube.pot._registry import _pot_providers
+              providers = list(_pot_providers.value.keys())
+              print(f"POT providers registered: {providers}")
+          except Exception as e:
+              print(f"FAIL registry: {type(e).__name__}: {e}")
+          PYEOF
+          echo "=== yt-dlp verbose on public video (skip download) ==="
+          yt-dlp --verbose --skip-download \
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | \
+            grep -iE "PO Token|PoToken|provider|plugin|bgutil|GetPOT|pot_provider" | head -30 || true
           echo "=== bgutil service smoke test ==="
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4416/ 2>/dev/null)
           echo "bgutil HTTP status: $STATUS (any response = service is up)"
