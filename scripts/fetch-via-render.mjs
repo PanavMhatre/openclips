@@ -43,6 +43,7 @@ async function main() {
   const renderUrl = (process.env.OPENCLIPS_RENDER_URL || "").replace(/\/+$/, "");
   const secret = process.env.OPENCLIPS_FETCH_SECRET || "";
   const cookiesB64 = process.env.COOKIES_B64 || "";
+  const proxies = process.env.YTDLP_PROXIES || "";
 
   if (!renderUrl) {
     process.stderr.write("Error: OPENCLIPS_RENDER_URL is not set.\n");
@@ -61,6 +62,12 @@ async function main() {
   } else {
     process.stderr.write("Warning: COOKIES_B64 not set — Render will use its own cookies (may fail).\n");
   }
+  if (proxies) {
+    const count = proxies.split(/[,\n]/).filter(Boolean).length;
+    process.stderr.write(`Forwarding ${count} proxy/proxies to Render server.\n`);
+  } else {
+    process.stderr.write("Warning: YTDLP_PROXIES not set — Render will use its own IP for downloads (may be blocked).\n");
+  }
 
   // Start fetch job on the Render server
   let jobId;
@@ -73,6 +80,7 @@ async function main() {
         minDuration: args.minDuration,
         limit: args.total,
         ...(cookiesB64 ? { cookiesB64 } : {}),
+        ...(proxies ? { proxies } : {}),
       }),
     });
     if (!postRes.ok) {

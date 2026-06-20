@@ -592,6 +592,18 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
     }
   }
 
+  // If caller passes proxies, pick one at random for all yt-dlp calls this job
+  let fetchProxy = null;
+  const proxiesRaw = req.body?.proxies || "";
+  if (proxiesRaw) {
+    const proxyList = String(proxiesRaw).split(/[,\n]/).map(p => p.trim()).filter(Boolean);
+    if (proxyList.length) {
+      fetchProxy = proxyList[Math.floor(Math.random() * proxyList.length)];
+      const masked = fetchProxy.replace(/:([^:@]+)@/, ":***@");
+      console.log(`[fetch-videos] using proxy: ${masked}`);
+    }
+  }
+
   // Parse channel roster — "sports" selects the sports roster, default is the podcast roster
   const rosterFile = req.body?.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
   let rosterMd;
@@ -630,6 +642,7 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
         "--no-warnings",
       ];
       if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+      if (fetchProxy) args.push("--proxy", fetchProxy);
       args.push(`ytsearch${fetchCount}:${alias}`);
       const proc = spawn("yt-dlp", args, { timeout: 60000 });
       let out = "";
@@ -683,8 +696,10 @@ app.post("/api/fetch-videos", express.json(), async (req, res) => {
         const args = [
           "--no-check-certificate", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
           "--merge-output-format", "mp4", "-o", outPath, "--no-playlist",
+          "--extractor-args", "youtube:player_client=ios,android,web",
         ];
         if (fetchCookiesPath) args.push("--cookies", fetchCookiesPath);
+        if (fetchProxy) args.push("--proxy", fetchProxy);
         args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 600000 });
         proc.on("close", code => code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}`)));
