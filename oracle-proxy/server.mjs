@@ -16,7 +16,10 @@ import { spawn } from "node:child_process";
 import { writeFile, unlink, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.PORT || 7474);
 const SECRET = process.env.FETCH_SECRET || "";
@@ -187,6 +190,38 @@ const server = createServer(async (req, res) => {
   if (SECRET) {
     const auth = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     if (auth !== SECRET) return send(res, 401, { error: "Unauthorized" });
+  }
+
+  // Pull latest code from git and restart — systemd will auto-restart the service.
+  // Protected by FETCH_SECRET auth check above.
+  if (req.method === "POST" && req.url === "/api/update") {
+    console.log(`[oracle-proxy] Self-update requested`);
+    send(res, 200, { ok: true, message: "Pulling latest code and restarting…" });
+    setTimeout(() => {
+      // Find the git repo root (works whether deployed as a subdir or standalone clone)
+      const findRoot = spawn("git", ["-C", __dirname, "rev-parse", "--show-toplevel"], { stdio: "pipe" });
+      let repoDir = __dirname;
+      let rootOut = "";
+      findRoot.stdout.on("data", d => { rootOut += d; });
+      findRoot.on("close", () => {
+        if (rootOut.trim()) repoDir = rootOut.trim();
+        console.log(`[oracle-proxy] git pull in ${repoDir}`);
+        const proc = spawn("git", ["-C", repoDir, "pull", "origin", "main"], { stdio: "pipe" });
+        let out = "";
+        proc.stdout.on("data", d => { out += d; });
+        proc.stderr.on("data", d => { out += d; });
+        proc.on("close", code => {
+          console.log(`[oracle-proxy] git pull exit ${code}: ${out.trim()}`);
+          console.log(`[oracle-proxy] Exiting so systemd restarts with new code…`);
+          process.exit(0);
+        });
+        proc.on("error", e => {
+          console.error(`[oracle-proxy] git pull spawn error: ${e.message}`);
+          process.exit(1);
+        });
+      });
+    }, 300);
+    return;
   }
 
   if (req.method === "GET" && req.url.startsWith("/api/fetch-videos/status/")) {

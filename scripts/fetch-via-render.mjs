@@ -205,20 +205,49 @@ async function main() {
     });
     if (!postRes.ok) {
       const errBody = await postRes.text();
-      // Oracle VM has old code that doesn't accept `urls` field yet — fall back to
-      // outputting the YouTube API URLs directly so the OpenClips server (which has
-      // yt-dlp + bgutil + cookies configured) can download them itself.
+      // Oracle VM has old code that doesn't accept `urls` field yet.
+      // Trigger a self-update on the VM, wait for restart, then retry once.
       if (useOracle && postBody.urls && errBody.includes("rosterContent required")) {
-        process.stderr.write(`Oracle VM is running old code — outputting YouTube URLs directly for local download.\n`);
-        writeDirectUrls(postBody.urls, args);
-        return;
+        process.stderr.write(`Oracle VM is running old code — triggering self-update and retrying...\n`);
+        let retried = false;
+        try {
+          const updateRes = await fetch(`${baseUrl}/api/update`, { method: "POST", headers });
+          if (updateRes.ok) {
+            process.stderr.write(`Oracle VM update triggered. Waiting 20s for restart...\n`);
+            await sleep(20_000);
+            const retryRes = await fetch(`${baseUrl}/api/fetch-videos`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(postBody),
+            });
+            if (retryRes.ok) {
+              const retryData = await retryRes.json();
+              jobId = retryData.jobId;
+              process.stderr.write(`Job started after Oracle VM update: ${jobId}\n`);
+              retried = true;
+            } else {
+              process.stderr.write(`Retry after update failed (${retryRes.status}) — falling back to local download.\n`);
+            }
+          } else {
+            process.stderr.write(`Oracle VM update endpoint returned ${updateRes.status} — falling back to local download.\n`);
+          }
+        } catch (updateErr) {
+          process.stderr.write(`Oracle VM update error: ${updateErr.message} — falling back to local download.\n`);
+        }
+        if (!retried) {
+          writeDirectUrls(postBody.urls, args);
+          return;
+        }
+        // retried = true: jobId already set above, skip to polling
+      } else {
+        process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${errBody}\n`);
+        process.exit(1);
       }
-      process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${errBody}\n`);
-      process.exit(1);
+    } else {
+      const data = await postRes.json();
+      jobId = data.jobId;
+      process.stderr.write(`Job started: ${jobId}\n`);
     }
-    const data = await postRes.json();
-    jobId = data.jobId;
-    process.stderr.write(`Job started: ${jobId}\n`);
   } catch (err) {
     process.stderr.write(`Error contacting server: ${err.message}\n`);
     process.exit(1);

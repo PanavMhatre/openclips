@@ -38,11 +38,13 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // web: full browser client — uses cookies + bgutil PO tokens from datacenter IPs.
+  // ios: iOS app client — does NOT use cookies but bypasses YouTube's bot-check
+  //      from datacenter IPs (uses a different API endpoint). Best first choice
+  //      for public sports highlights from GitHub Actions runners.
+  // web: full browser client — uses cookies + bgutil PO tokens.
   // mweb: mobile web — uses cookies, good fallback if web is blocked.
   // android: Android app client — uses cookies, bypasses some rate limits.
-  // Note: ios is intentionally excluded — it ignores cookies entirely.
-  '--extractor-args "youtube:player_client=web,mweb,android"',
+  '--extractor-args "youtube:player_client=ios,web,mweb,android"',
 ];
 
 if (cookiesFile) {
