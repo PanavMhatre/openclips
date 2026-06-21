@@ -47,7 +47,7 @@ async function searchYouTubeApi(channels, minDurationSec, totalLimit) {
 
   process.stderr.write(`YouTube API search (videoDuration=${durationFilter}, ${channels.length} queries)...\n`);
   for (const ch of channels) {
-    if (results.length >= totalLimit * 4) break;
+    if (results.length >= Math.max(totalLimit * 4, 20)) break;
     const query = ch.searchAlias;
     if (!query) continue;
     try {

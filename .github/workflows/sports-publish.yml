@@ -2,7 +2,7 @@ name: Sports Publish
 
 on:
   schedule:
-    # Every 2 hours offset by 30 min — posts one sports clip each run
+    # Every 2 hours offset by 30 min — posts 7 sports clips each run
     - cron: '30 */2 * * *'
   workflow_dispatch:
     inputs:
@@ -21,7 +21,7 @@ on:
       clip_count:
         description: 'Number of clips to post per run'
         type: string
-        default: '1'
+        default: '7'
 
 jobs:
   publish:
@@ -217,12 +217,14 @@ jobs:
         env:
           COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
+          CLIP_COUNT="${{ github.event.inputs.clip_count }}"
+          FETCH_TOTAL="${CLIP_COUNT:-7}"
           if [ "$DYNAMIC_ROSTER_READY" = "true" ]; then
-            echo "Using dynamic roster from NewsAPI + YouTube trending"
-            node scripts/fetch-via-render.mjs --roster-file=/tmp/oc-dynamic-roster.md --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
+            echo "Using dynamic roster from NewsAPI + YouTube trending (fetching ${FETCH_TOTAL} videos)"
+            node scripts/fetch-via-render.mjs --roster-file=/tmp/oc-dynamic-roster.md --min-duration=120 --total="${FETCH_TOTAL}" --output=/tmp/oc-fresh-urls.json
           else
-            echo "Using static sports roster"
-            node scripts/fetch-via-render.mjs --roster=sports --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
+            echo "Using static sports roster (fetching ${FETCH_TOTAL} videos)"
+            node scripts/fetch-via-render.mjs --roster=sports --min-duration=120 --total="${FETCH_TOTAL}" --output=/tmp/oc-fresh-urls.json
           fi
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
