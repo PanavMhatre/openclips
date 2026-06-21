@@ -59,16 +59,15 @@ if (cookiesFile) {
   );
 }
 
-// Proxy rotation — pick one proxy at random to distribute 1 GB/month per-proxy budget
+// Proxy is forwarded to Oracle VM for downloads only — do NOT bake into the
+// global yt-dlp config here, because the proxy is IP-whitelisted for the Oracle
+// VM and will return 402 when used from GitHub Actions datacenter IPs.
 const proxiesRaw = process.env.YTDLP_PROXIES || "";
-const proxies = proxiesRaw.split(/[,\n]/).map((p) => p.trim()).filter(Boolean);
-if (proxies.length) {
-  const proxy = proxies[Math.floor(Math.random() * proxies.length)];
-  lines.push(`--proxy ${proxy}`);
-  process.stderr.write(`Using proxy: ${proxy.replace(/:([^:@]+)@/, ":***@")}\n`);
+if (proxiesRaw.trim()) {
+  process.stderr.write("YTDLP_PROXIES set — proxy forwarded to Oracle VM only, not written to yt-dlp config.\n");
 } else {
   process.stderr.write(
-    "No YTDLP_PROXIES set — downloads use the runner's datacenter IP (likely blocked by YouTube).\n",
+    "No YTDLP_PROXIES set — downloads use the runner's datacenter IP with bgutil+cookies.\n",
   );
 }
 
