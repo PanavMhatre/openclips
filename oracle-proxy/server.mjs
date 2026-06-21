@@ -61,10 +61,14 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
         args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
 
         const proc = spawn("yt-dlp", args, { timeout: 60000 });
-        let out = "";
+        let out = "", err = "";
         proc.stdout.on("data", d => out += d);
-        proc.on("close", () => {
+        proc.stderr.on("data", d => { err += d; process.stderr.write(d); });
+        proc.on("close", code => {
           const results = [];
+          if (!out.trim()) {
+            console.error(`[oracle-proxy] ${ch.name}: yt-dlp exit ${code}, no stdout. stderr: ${err.slice(0, 500)}`);
+          }
           for (const line of out.trim().split("\n")) {
             if (!line.trim()) continue;
             const [url, title, duration, uploader, vcodec] = line.split("\t");
@@ -77,13 +81,13 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
           }
           resolve(results);
         });
-        proc.on("error", () => resolve([]));
+        proc.on("error", e => { console.error(`[oracle-proxy] ${ch.name}: spawn error: ${e.message}`); resolve([]); });
       });
       for (const v of found) videoList.push(v);
     }
 
     if (!videoList.length) {
-      jobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results — cookies may need refresh", count: 0, videos: [] };
+      jobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results across all channels — check Oracle VM journalctl -u oracle-proxy for stderr", count: 0, videos: [] };
       return;
     }
 
