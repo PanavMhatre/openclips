@@ -56,6 +56,7 @@ jobs:
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_SPORTS_CHANNEL_IDS }}
       BUFFER_CHANNEL_INCLUDE: playrushsportsclips
       BUFFER_CHANNEL_EXCLUDE: ""
+      NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
       PORT: 3000
       OPENCLIPS_GROQ_CHAT_MODEL: openai/gpt-oss-120b
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
@@ -197,12 +198,32 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
+      - name: Generate dynamic sports search queries
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        continue-on-error: true
+        run: |
+          node scripts/generate-sports-queries.mjs
+          if [ -f /tmp/oc-dynamic-roster.md ]; then
+            echo "DYNAMIC_ROSTER_READY=true" >> $GITHUB_ENV
+            echo "=== Dynamic roster preview ==="
+            cat /tmp/oc-dynamic-roster.md
+          else
+            echo "DYNAMIC_ROSTER_READY=false" >> $GITHUB_ENV
+            echo "Dynamic roster generation failed — will use static roster"
+          fi
+
       - name: Fetch newest sports videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         env:
           COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          node scripts/fetch-via-render.mjs --roster=sports --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
+          if [ "$DYNAMIC_ROSTER_READY" = "true" ]; then
+            echo "Using dynamic roster from NewsAPI + YouTube trending"
+            node scripts/fetch-via-render.mjs --roster-file=/tmp/oc-dynamic-roster.md --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
+          else
+            echo "Using static sports roster"
+            node scripts/fetch-via-render.mjs --roster=sports --min-duration=120 --total=1 --output=/tmp/oc-fresh-urls.json
+          fi
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 

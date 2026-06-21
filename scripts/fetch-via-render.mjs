@@ -27,13 +27,14 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
-  const args = { roster: "daily", total: 1, minDuration: 1200, output: null };
+  const args = { roster: "daily", total: 1, minDuration: 1200, output: null, rosterFile: null };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "roster") args.roster = val;
     else if (key === "total") args.total = Number(val) || 1;
     else if (key === "min-duration") args.minDuration = Number(val) || 1200;
     else if (key === "output") args.output = val;
+    else if (key === "roster-file") args.rosterFile = val;
   }
   return args;
 }
@@ -75,8 +76,16 @@ async function main() {
   let postBody;
   if (useOracle) {
     // Oracle proxy needs the roster content (it doesn't have a copy of the repo)
-    const rosterFile = args.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
-    const rosterPath = path.join(__dirname, "..", "references", rosterFile);
+    // --roster-file overrides the default static file (used for dynamic query generation)
+    let rosterPath, rosterLabel;
+    if (args.rosterFile) {
+      rosterPath = args.rosterFile;
+      rosterLabel = path.basename(args.rosterFile);
+    } else {
+      const rosterFile = args.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
+      rosterPath = path.join(__dirname, "..", "references", rosterFile);
+      rosterLabel = rosterFile;
+    }
     let rosterContent;
     try {
       rosterContent = readFileSync(rosterPath, "utf8");
@@ -84,7 +93,7 @@ async function main() {
       process.stderr.write(`Error: cannot read ${rosterPath}\n`);
       process.exit(1);
     }
-    process.stderr.write(`Sending roster: ${rosterFile}\n`);
+    process.stderr.write(`Sending roster: ${rosterLabel}\n`);
     postBody = {
       rosterContent,
       minDuration: args.minDuration,
