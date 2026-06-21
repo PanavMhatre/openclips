@@ -135,6 +135,7 @@ async function main() {
 
   // Build POST body
   let postBody;
+  let oracleRosterContent = null; // captured for fallback retry when Oracle VM runs old code
   if (useOracle) {
     // Read roster file (needed for YouTube API search and as fallback for Oracle VM search)
     let rosterPath, rosterLabel;
@@ -153,6 +154,7 @@ async function main() {
       process.stderr.write(`Error: cannot read ${rosterPath}\n`);
       process.exit(1);
     }
+    oracleRosterContent = rosterContent; // save for potential fallback
 
     // Try YouTube Data API search first (avoids yt-dlp search bot-check on Oracle VM)
     const rosterChannels = parseRosterLocally(rosterContent);
@@ -205,40 +207,36 @@ async function main() {
     });
     if (!postRes.ok) {
       const errBody = await postRes.text();
-      // Oracle VM has old code that doesn't accept `urls` field yet.
-      // Trigger a self-update on the VM, wait for restart, then retry once.
-      if (useOracle && postBody.urls && errBody.includes("rosterContent required")) {
-        process.stderr.write(`Oracle VM is running old code — triggering self-update and retrying...\n`);
-        let retried = false;
+      // Oracle VM running old code that doesn't support the `urls` field yet.
+      // Retry with rosterContent so Oracle VM does its own yt-dlp search+download via proxy.
+      if (useOracle && postBody.urls && errBody.includes("rosterContent required") && oracleRosterContent) {
+        process.stderr.write(`Oracle VM is running old code — retrying with rosterContent (yt-dlp search mode)...\n`);
         try {
-          const updateRes = await fetch(`${baseUrl}/api/update`, { method: "POST", headers });
-          if (updateRes.ok) {
-            process.stderr.write(`Oracle VM update triggered. Waiting 20s for restart...\n`);
-            await sleep(20_000);
-            const retryRes = await fetch(`${baseUrl}/api/fetch-videos`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(postBody),
-            });
-            if (retryRes.ok) {
-              const retryData = await retryRes.json();
-              jobId = retryData.jobId;
-              process.stderr.write(`Job started after Oracle VM update: ${jobId}\n`);
-              retried = true;
-            } else {
-              process.stderr.write(`Retry after update failed (${retryRes.status}) — falling back to local download.\n`);
-            }
+          const fallbackBody = {
+            rosterContent: oracleRosterContent,
+            minDuration: args.minDuration,
+            limit: args.total,
+            ...(cookiesB64 ? { cookiesB64 } : {}),
+            ...(proxies ? { proxies } : {}),
+          };
+          const retryRes = await fetch(`${baseUrl}/api/fetch-videos`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(fallbackBody),
+          });
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            jobId = retryData.jobId;
+            process.stderr.write(`Job started via rosterContent fallback: ${jobId}\n`);
           } else {
-            process.stderr.write(`Oracle VM update endpoint returned ${updateRes.status} — falling back to local download.\n`);
+            const retryErr = await retryRes.text();
+            process.stderr.write(`Oracle VM rosterContent fallback also failed (${retryRes.status}): ${retryErr}\n`);
+            process.exit(1);
           }
-        } catch (updateErr) {
-          process.stderr.write(`Oracle VM update error: ${updateErr.message} — falling back to local download.\n`);
+        } catch (retryErr) {
+          process.stderr.write(`Oracle VM rosterContent fallback error: ${retryErr.message}\n`);
+          process.exit(1);
         }
-        if (!retried) {
-          writeDirectUrls(postBody.urls, args);
-          return;
-        }
-        // retried = true: jobId already set above, skip to polling
       } else {
         process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${errBody}\n`);
         process.exit(1);
