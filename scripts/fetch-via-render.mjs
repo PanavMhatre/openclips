@@ -204,8 +204,16 @@ async function main() {
       body: JSON.stringify(postBody),
     });
     if (!postRes.ok) {
-      const body = await postRes.text();
-      process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${body}\n`);
+      const errBody = await postRes.text();
+      // Oracle VM has old code that doesn't accept `urls` field yet — fall back to
+      // outputting the YouTube API URLs directly so the OpenClips server (which has
+      // yt-dlp + bgutil + cookies configured) can download them itself.
+      if (useOracle && postBody.urls && errBody.includes("rosterContent required")) {
+        process.stderr.write(`Oracle VM is running old code — outputting YouTube URLs directly for local download.\n`);
+        writeDirectUrls(postBody.urls, args);
+        return;
+      }
+      process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${errBody}\n`);
       process.exit(1);
     }
     const data = await postRes.json();
@@ -264,6 +272,28 @@ async function main() {
     process.stderr.write(`  - ${v.title.slice(0, 65)} (${v.duration_str})\n    → ${(v.url || "").slice(0, 70)}\n`);
   }
 
+  const json = JSON.stringify(output, null, 2);
+  if (args.output) {
+    writeFileSync(args.output, json);
+    process.stderr.write(`Wrote results to ${args.output}\n`);
+  } else {
+    process.stdout.write(json + "\n");
+  }
+}
+
+function writeDirectUrls(urls, args) {
+  const output = urls.slice(0, args.total).map((v) => ({
+    url: v.url,
+    title: v.title || "",
+    duration: v.duration || 0,
+    duration_str: "?",
+    channel: v.channel || "",
+    uploader: v.channel || "",
+  }));
+  process.stderr.write(`\nUsing ${output.length} YouTube URL(s) for direct processing:\n`);
+  for (const v of output) {
+    process.stderr.write(`  - ${v.title.slice(0, 65)}\n    → ${v.url}\n`);
+  }
   const json = JSON.stringify(output, null, 2);
   if (args.output) {
     writeFileSync(args.output, json);
