@@ -2,20 +2,25 @@
 /**
  * fetch-via-render.mjs
  *
- * Routes YouTube search + download through the Render.com server to avoid
- * GitHub Actions datacenter IP blocks. The Render server uses its own IP +
- * yt-dlp cookies to search YouTube and download videos, uploading them to
- * GitHub storage and returning raw file URLs that can be processed locally.
+ * Routes YouTube search + download through an external server to avoid
+ * GitHub Actions datacenter IP blocks.
+ *
+ * Prefers OPENCLIPS_ORACLE_URL (Oracle VM proxy) over OPENCLIPS_RENDER_URL.
+ * The Oracle proxy accepts rosterContent in the POST body so it doesn't
+ * need a copy of the repo.
  *
  * Usage:
- *   node scripts/fetch-via-render.mjs [--roster=sports] [--total=1] [--min-duration=120] [--output=file]
+ *   node scripts/fetch-via-render.mjs [--roster=sports] [--total=1] [--min-duration=1200] [--output=file]
  *
- * Required env vars:
- *   OPENCLIPS_RENDER_URL    Base URL of the Render OpenClips server
- *   OPENCLIPS_FETCH_SECRET  Bearer token for the /api/fetch-videos endpoint
+ * Env vars:
+ *   OPENCLIPS_ORACLE_URL    Preferred — Oracle VM proxy URL (http://ip:7474)
+ *   OPENCLIPS_RENDER_URL    Fallback — Render server URL
+ *   OPENCLIPS_FETCH_SECRET  Bearer token
+ *   COOKIES_B64             YouTube cookies (base64 Netscape format)
+ *   YTDLP_PROXIES           Comma/newline-separated proxy list (forwarded to Render only)
  */
 
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -40,13 +45,18 @@ function sleep(ms) {
 async function main() {
   const args = parseArgs(process.argv);
 
+  const oracleUrl = (process.env.OPENCLIPS_ORACLE_URL || "").replace(/\/+$/, "");
   const renderUrl = (process.env.OPENCLIPS_RENDER_URL || "").replace(/\/+$/, "");
   const secret = process.env.OPENCLIPS_FETCH_SECRET || "";
   const cookiesB64 = process.env.COOKIES_B64 || "";
   const proxies = process.env.YTDLP_PROXIES || "";
 
-  if (!renderUrl) {
-    process.stderr.write("Error: OPENCLIPS_RENDER_URL is not set.\n");
+  // Prefer Oracle VM over Render
+  const useOracle = Boolean(oracleUrl);
+  const baseUrl = useOracle ? oracleUrl : renderUrl;
+
+  if (!baseUrl) {
+    process.stderr.write("Error: neither OPENCLIPS_ORACLE_URL nor OPENCLIPS_RENDER_URL is set.\n");
     process.exit(1);
   }
 
@@ -54,45 +64,69 @@ async function main() {
   if (secret) headers["Authorization"] = `Bearer ${secret}`;
 
   process.stderr.write(
-    `Requesting Render server to fetch videos (roster=${args.roster}, total=${args.total}, minDuration=${args.minDuration}s)...\n`,
+    `Fetching videos via ${useOracle ? "Oracle VM proxy" : "Render server"} ` +
+    `(roster=${args.roster}, total=${args.total}, minDuration=${args.minDuration}s)...\n`,
   );
-  process.stderr.write(`Render URL: ${renderUrl}\n`);
-  if (cookiesB64) {
-    process.stderr.write("Forwarding YouTube cookies to Render server.\n");
+  process.stderr.write(`Server URL: ${baseUrl}\n`);
+  if (cookiesB64) process.stderr.write("Forwarding YouTube cookies.\n");
+  else process.stderr.write("Warning: COOKIES_B64 not set — server will run yt-dlp without cookies.\n");
+
+  // Build POST body
+  let postBody;
+  if (useOracle) {
+    // Oracle proxy needs the roster content (it doesn't have a copy of the repo)
+    const rosterFile = args.roster === "sports" ? "sports-channel-roster.md" : "channel-roster.md";
+    const rosterPath = path.join(__dirname, "..", "references", rosterFile);
+    let rosterContent;
+    try {
+      rosterContent = readFileSync(rosterPath, "utf8");
+    } catch {
+      process.stderr.write(`Error: cannot read ${rosterPath}\n`);
+      process.exit(1);
+    }
+    process.stderr.write(`Sending roster: ${rosterFile}\n`);
+    postBody = {
+      rosterContent,
+      minDuration: args.minDuration,
+      limit: args.total,
+      ...(cookiesB64 ? { cookiesB64 } : {}),
+      ...(proxies ? { proxies } : {}),
+    };
   } else {
-    process.stderr.write("Warning: COOKIES_B64 not set — Render will use its own cookies (may fail).\n");
-  }
-  if (proxies) {
-    const count = proxies.split(/[,\n]/).filter(Boolean).length;
-    process.stderr.write(`Forwarding ${count} proxy/proxies to Render server.\n`);
-  } else {
-    process.stderr.write("Warning: YTDLP_PROXIES not set — Render will use its own IP for downloads (may be blocked).\n");
+    // Render server reads the roster itself from its own copy of the repo
+    if (proxies) {
+      const count = proxies.split(/[,\n]/).filter(Boolean).length;
+      process.stderr.write(`Forwarding ${count} proxy/proxies to Render server.\n`);
+    } else {
+      process.stderr.write("Warning: YTDLP_PROXIES not set — Render will use its own IP (may be blocked).\n");
+    }
+    postBody = {
+      roster: args.roster,
+      minDuration: args.minDuration,
+      limit: args.total,
+      ...(cookiesB64 ? { cookiesB64 } : {}),
+      ...(proxies ? { proxies } : {}),
+    };
   }
 
-  // Start fetch job on the Render server
+  // Start fetch job
   let jobId;
   try {
-    const postRes = await fetch(`${renderUrl}/api/fetch-videos`, {
+    const postRes = await fetch(`${baseUrl}/api/fetch-videos`, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        roster: args.roster,
-        minDuration: args.minDuration,
-        limit: args.total,
-        ...(cookiesB64 ? { cookiesB64 } : {}),
-        ...(proxies ? { proxies } : {}),
-      }),
+      body: JSON.stringify(postBody),
     });
     if (!postRes.ok) {
       const body = await postRes.text();
-      process.stderr.write(`Error: Render /api/fetch-videos returned HTTP ${postRes.status}: ${body}\n`);
+      process.stderr.write(`Error: server /api/fetch-videos returned HTTP ${postRes.status}: ${body}\n`);
       process.exit(1);
     }
     const data = await postRes.json();
     jobId = data.jobId;
     process.stderr.write(`Job started: ${jobId}\n`);
   } catch (err) {
-    process.stderr.write(`Error contacting Render server: ${err.message}\n`);
+    process.stderr.write(`Error contacting server: ${err.message}\n`);
     process.exit(1);
   }
 
@@ -103,7 +137,7 @@ async function main() {
   for (let i = 1; i <= maxAttempts; i++) {
     await sleep(30_000);
     try {
-      const statusRes = await fetch(`${renderUrl}/api/fetch-videos/status/${jobId}`, { headers });
+      const statusRes = await fetch(`${baseUrl}/api/fetch-videos/status/${jobId}`, { headers });
       if (!statusRes.ok) {
         process.stderr.write(`  [poll ${i}/${maxAttempts}] HTTP ${statusRes.status} — retrying...\n`);
         continue;
@@ -120,16 +154,16 @@ async function main() {
   }
 
   if (!result) {
-    process.stderr.write("Error: timed out waiting for Render fetch-videos job.\n");
+    process.stderr.write("Error: timed out waiting for fetch-videos job.\n");
     process.exit(1);
   }
 
   if (!result.ok || !result.videos?.length) {
-    process.stderr.write(`Error: Render fetch-videos failed: ${result.error || "no videos returned"}\n`);
+    process.stderr.write(`Error: fetch-videos failed: ${result.error || "no videos returned"}\n`);
     process.exit(1);
   }
 
-  // Map to the same format as latest-youtube-search.mjs, using githubUrl as url
+  // Map to the format expected by downstream scripts
   const output = result.videos.map((v) => ({
     url: v.githubUrl || v.localPath || v.url,
     title: v.title || "",
@@ -139,10 +173,9 @@ async function main() {
     uploader: v.uploader || "",
   }));
 
-  process.stderr.write(`\nRender returned ${output.length} video(s):\n`);
+  process.stderr.write(`\nServer returned ${output.length} video(s):\n`);
   for (const v of output) {
-    const urlPreview = (v.url || "").slice(0, 70);
-    process.stderr.write(`  - ${v.title.slice(0, 65)} (${v.duration_str})\n    → ${urlPreview}\n`);
+    process.stderr.write(`  - ${v.title.slice(0, 65)} (${v.duration_str})\n    → ${(v.url || "").slice(0, 70)}\n`);
   }
 
   const json = JSON.stringify(output, null, 2);

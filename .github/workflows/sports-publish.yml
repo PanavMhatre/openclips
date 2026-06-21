@@ -42,6 +42,7 @@ jobs:
       GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
       NVIDIA_API_KEYS: ${{ secrets.NVIDIA_API_KEYS }}
       NVIDIA_DEEPSEEK_API_KEYS: ${{ secrets.NVIDIA_DEEPSEEK_API_KEYS }}
+      OPENCLIPS_ORACLE_URL: ${{ secrets.OPENCLIPS_ORACLE_URL }}
       OPENCLIPS_RENDER_URL: ${{ secrets.OPENCLIPS_RENDER_URL }}
       OPENCLIPS_FETCH_SECRET: ${{ secrets.OPENCLIPS_FETCH_SECRET }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -51,12 +52,10 @@ jobs:
       GITHUB_STORAGE_REPO: PanavMhatre/openclips-media
       GITHUB_STORAGE_BRANCH: main
       GITHUB_STORAGE_DIR: sports-clips
-      # TODO: add BUFFER_SPORTS_CHANNEL_IDS secret in repo settings
-      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+      BUFFER_API_KEY: ${{ secrets.BUFFER_SPORTS_API_KEY }}
       BUFFER_CHANNEL_IDS: ${{ secrets.BUFFER_SPORTS_CHANNEL_IDS }}
-      # TODO: set these to your sports Buffer channel names once created
-      BUFFER_CHANNEL_INCLUDE: ${{ secrets.BUFFER_SPORTS_CHANNEL_INCLUDE }}
-      BUFFER_CHANNEL_EXCLUDE: ${{ secrets.BUFFER_SPORTS_CHANNEL_EXCLUDE }}
+      BUFFER_CHANNEL_INCLUDE: playrushsportsclips
+      BUFFER_CHANNEL_EXCLUDE: ""
       PORT: 3000
       OPENCLIPS_GROQ_CHAT_MODEL: openai/gpt-oss-120b
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
