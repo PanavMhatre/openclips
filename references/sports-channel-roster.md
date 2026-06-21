@@ -12,28 +12,28 @@ Source YouTube channels for the sports-clips pipeline.
 
 | Name | Channel / Handle | Search Alias | Weight |
 |------|-----------------|--------------|--------|
-| FIFA World Cup | @FIFAWorldCup | FIFA world cup 2026 highlights | 3 |
-| Premier League | @premierleague | premier league match highlights 2025 | 3 |
-| La Liga | @LaLiga | la liga highlights 2025 | 2 |
+| FIFA World Cup | @FIFAWorldCup | FIFA world cup 2026 highlights goals | 4 |
+| Premier League | @premierleague | premier league 2025/26 best goals highlights | 2 |
+| La Liga | @LaLiga | la liga 2025/26 best goals highlights | 2 |
 
 ## Tier B — 35% (major leagues)
 
 | Name | Channel / Handle | Search Alias | Weight |
 |------|-----------------|--------------|--------|
-| UEFA Champions League | @ChampionsLeague | UEFA champions league highlights | 2 |
-| NFL Network | @NFLNetwork | NFL game highlights 2025 | 2 |
-| NBA | @NBA | NBA game highlights 2025 | 2 |
-| ESPN | @ESPN | ESPN sports top plays highlights | 2 |
+| UEFA Champions League | @ChampionsLeague | UEFA champions league final 2026 highlights | 2 |
+| NFL Network | @NFLNetwork | NFL game highlights 2025 season | 2 |
+| NBA | @NBA | NBA finals 2026 highlights | 3 |
+| ESPN | @ESPN | world cup 2026 highlights ESPN | 2 |
 
 ## Tier C — 25% (multi-sport / analysis)
 
 | Name | Channel / Handle | Search Alias | Weight |
 |------|-----------------|--------------|--------|
-| Sky Sports | @SkySports | sky sports match highlights | 1 |
-| Bleacher Report | @BleacherReport | bleacher report highlights | 1 |
-| CBS Sports | @CBSSports | CBS sports highlights | 1 |
-| UFC | @UFC | UFC fight highlights | 1 |
-| beIN Sports | @beINSPORTSEN | bein sports highlights 2025 | 1 |
+| Sky Sports | @SkySports | sky sports world cup 2026 highlights | 1 |
+| Bleacher Report | @BleacherReport | bleacher report world cup 2026 | 1 |
+| CBS Sports | @CBSSports | CBS sports world cup 2026 highlights | 1 |
+| UFC | @UFC | UFC fight highlights 2026 | 1 |
+| beIN Sports | @beINSPORTSEN | bein sports world cup 2026 highlights | 1 |
 
 ---
 
