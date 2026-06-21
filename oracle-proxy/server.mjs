@@ -37,7 +37,7 @@ function parseRoster(md) {
   return channels;
 }
 
-async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl) {
+async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl, preSearchedUrls = null) {
   let cookiesPath = null;
   if (cookiesB64) {
     cookiesPath = join(tmpdir(), `cookies-${jobId}.txt`);
@@ -48,45 +48,54 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
   await mkdir(fileDir, { recursive: true });
 
   try {
-    // Search each channel via yt-dlp
     const videoList = [];
-    for (const ch of channels) {
-      const limit = limitPerChannel * ch.weight;
-      const fetchCount = Math.max(limit * 5, 10);
-      const found = await new Promise(resolve => {
-        const args = [
-          "--no-check-certificate", "--no-playlist", "--flat-playlist",
-          "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
-          "--no-warnings",
-        ];
-        if (cookiesPath) args.push("--cookies", cookiesPath);
-        if (proxyUrl) args.push("--proxy", proxyUrl);
-        args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
 
-        const proc = spawn("yt-dlp", args, { timeout: 120000 });
-        let out = "", err = "";
-        proc.stdout.on("data", d => out += d);
-        proc.stderr.on("data", d => { err += d; process.stderr.write(d); });
-        proc.on("close", code => {
-          const results = [];
-          if (!out.trim()) {
-            console.error(`[oracle-proxy] ${ch.name}: yt-dlp exit ${code}, no stdout. stderr: ${err.slice(0, 300)}`);
-          }
-          for (const line of out.trim().split("\n")) {
-            if (!line.trim()) continue;
-            const [url, title, duration] = line.split("\t");
-            if (!url || !title) continue;
-            const dur = Number(duration);
-            if (dur > 0 && dur < minDuration) continue;
-            if (AUDIO_RE.test(title)) continue;
-            results.push({ url: url.trim(), title: title.trim(), duration: dur, channel: ch.name });
-            if (results.length >= limit) break;
-          }
-          resolve(results);
+    if (preSearchedUrls && preSearchedUrls.length > 0) {
+      // Caller already searched — just download these specific URLs
+      console.log(`[oracle-proxy] download-only mode: ${preSearchedUrls.length} pre-searched URL(s)`);
+      for (const v of preSearchedUrls.slice(0, Math.max(limitPerChannel, 1))) {
+        videoList.push({ url: v.url, title: v.title || v.url, duration: v.duration || 0, channel: v.channel || "" });
+      }
+    } else {
+      // Search each channel via yt-dlp
+      for (const ch of channels) {
+        const limit = limitPerChannel * ch.weight;
+        const fetchCount = Math.max(limit * 5, 10);
+        const found = await new Promise(resolve => {
+          const args = [
+            "--no-check-certificate", "--no-playlist", "--flat-playlist",
+            "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
+            "--no-warnings",
+          ];
+          if (cookiesPath) args.push("--cookies", cookiesPath);
+          if (proxyUrl) args.push("--proxy", proxyUrl);
+          args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
+
+          const proc = spawn("yt-dlp", args, { timeout: 120000 });
+          let out = "", err = "";
+          proc.stdout.on("data", d => out += d);
+          proc.stderr.on("data", d => { err += d; process.stderr.write(d); });
+          proc.on("close", code => {
+            const results = [];
+            if (!out.trim()) {
+              console.error(`[oracle-proxy] ${ch.name}: yt-dlp exit ${code}, no stdout. stderr: ${err.slice(0, 300)}`);
+            }
+            for (const line of out.trim().split("\n")) {
+              if (!line.trim()) continue;
+              const [url, title, duration] = line.split("\t");
+              if (!url || !title) continue;
+              const dur = Number(duration);
+              if (dur > 0 && dur < minDuration) continue;
+              if (AUDIO_RE.test(title)) continue;
+              results.push({ url: url.trim(), title: title.trim(), duration: dur, channel: ch.name });
+              if (results.length >= limit) break;
+            }
+            resolve(results);
+          });
+          proc.on("error", e => { console.error(`[oracle-proxy] ${ch.name}: spawn error: ${e.message}`); resolve([]); });
         });
-        proc.on("error", e => { console.error(`[oracle-proxy] ${ch.name}: spawn error: ${e.message}`); resolve([]); });
-      });
-      for (const v of found) videoList.push(v);
+        for (const v of found) videoList.push(v);
+      }
     }
 
     if (!videoList.length) {
@@ -195,20 +204,23 @@ const server = createServer(async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(body); } catch { return send(res, 400, { error: "Invalid JSON" }); }
 
-    const { rosterContent, minDuration = 1200, limit = 1, cookiesB64, proxies } = parsed;
-    if (!rosterContent) return send(res, 400, { error: "rosterContent required" });
+    const { rosterContent, urls: preSearchedUrls, minDuration = 1200, limit = 1, cookiesB64, proxies } = parsed;
 
-    const channels = parseRoster(rosterContent);
-    if (!channels.length) return send(res, 400, { error: "No channels parsed from roster" });
+    const hasPreSearched = Array.isArray(preSearchedUrls) && preSearchedUrls.length > 0;
+    if (!hasPreSearched && !rosterContent) return send(res, 400, { error: "rosterContent or urls required" });
+
+    const channels = hasPreSearched ? [] : parseRoster(rosterContent);
+    if (!hasPreSearched && !channels.length) return send(res, 400, { error: "No channels parsed from roster" });
 
     const proxyUrl = proxies ? proxies.split(/[,\n]/).map(s => s.trim()).filter(Boolean)[0] : null;
     if (proxyUrl) console.log(`[oracle-proxy] using proxy for downloads: ${proxyUrl.slice(0, 40)}...`);
+    if (hasPreSearched) console.log(`[oracle-proxy] download-only mode: received ${preSearchedUrls.length} URL(s) from caller`);
 
     const jobId = randomUUID();
     jobs[jobId] = { ok: false, status: "running", count: 0, videos: [] };
     send(res, 200, { ok: true, jobId, status: "running" });
 
-    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, proxyUrl).catch(err => {
+    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, proxyUrl, hasPreSearched ? preSearchedUrls : null).catch(err => {
       jobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
     });
     return;

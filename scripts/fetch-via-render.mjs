@@ -26,6 +26,67 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function parseRosterLocally(md) {
+  const channels = [];
+  for (const line of (md || "").split("\n")) {
+    const m = line.match(/^\|\s*([^|]+?)\s*\|\s*(@[^\s|]+|https?:\/\/[^\s|]+)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|/);
+    if (m && !m[1].toLowerCase().includes("name")) {
+      channels.push({ name: m[1].trim(), searchAlias: m[3].trim(), weight: Number(m[4]) || 1 });
+    }
+  }
+  return channels;
+}
+
+async function searchYouTubeApi(channels, minDurationSec, totalLimit) {
+  const apiKey = process.env.YOUTUBE_API_KEY || "";
+  if (!apiKey) { process.stderr.write("YOUTUBE_API_KEY not set — skipping API search\n"); return null; }
+
+  const durationFilter = minDurationSec <= 240 ? "medium" : "long";
+  const results = [];
+  const seen = new Set();
+
+  process.stderr.write(`YouTube API search (videoDuration=${durationFilter}, ${channels.length} queries)...\n`);
+  for (const ch of channels) {
+    if (results.length >= totalLimit * 4) break;
+    const query = ch.searchAlias;
+    if (!query) continue;
+    try {
+      const params = new URLSearchParams({
+        part: "snippet",
+        q: query,
+        type: "video",
+        videoDuration: durationFilter,
+        maxResults: "5",
+        relevanceLanguage: "en",
+        key: apiKey,
+      });
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+      const data = await res.json();
+      if (data.error) {
+        process.stderr.write(`  [yt-api] "${query.slice(0,50)}": ${data.error.message}\n`);
+        continue;
+      }
+      for (const item of data.items || []) {
+        const videoId = item.id?.videoId;
+        if (!videoId || seen.has(videoId)) continue;
+        seen.add(videoId);
+        results.push({
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          title: item.snippet?.title || "",
+          channel: item.snippet?.channelTitle || ch.name,
+          duration: 0,
+        });
+      }
+      process.stderr.write(`  [yt-api] "${query.slice(0,50)}": ${data.items?.length || 0} hits\n`);
+    } catch (e) {
+      process.stderr.write(`  [yt-api] "${query.slice(0,50)}": ${e.message}\n`);
+    }
+  }
+  if (!results.length) return null;
+  process.stderr.write(`YouTube API found ${results.length} candidate video(s) total.\n`);
+  return results;
+}
+
 function parseArgs(argv) {
   const args = { roster: "daily", total: 1, minDuration: 1200, output: null, rosterFile: null };
   for (const arg of argv.slice(2)) {
@@ -75,8 +136,7 @@ async function main() {
   // Build POST body
   let postBody;
   if (useOracle) {
-    // Oracle proxy needs the roster content (it doesn't have a copy of the repo)
-    // --roster-file overrides the default static file (used for dynamic query generation)
+    // Read roster file (needed for YouTube API search and as fallback for Oracle VM search)
     let rosterPath, rosterLabel;
     if (args.rosterFile) {
       rosterPath = args.rosterFile;
@@ -93,14 +153,31 @@ async function main() {
       process.stderr.write(`Error: cannot read ${rosterPath}\n`);
       process.exit(1);
     }
-    process.stderr.write(`Sending roster: ${rosterLabel}\n`);
-    postBody = {
-      rosterContent,
-      minDuration: args.minDuration,
-      limit: args.total,
-      ...(cookiesB64 ? { cookiesB64 } : {}),
-      ...(proxies ? { proxies } : {}),
-    };
+
+    // Try YouTube Data API search first (avoids yt-dlp search bot-check on Oracle VM)
+    const rosterChannels = parseRosterLocally(rosterContent);
+    const preSearchedUrls = await searchYouTubeApi(rosterChannels, args.minDuration, args.total);
+
+    if (preSearchedUrls && preSearchedUrls.length > 0) {
+      process.stderr.write(`Using YouTube API results — Oracle VM will download only.\n`);
+      postBody = {
+        urls: preSearchedUrls,
+        minDuration: args.minDuration,
+        limit: args.total,
+        ...(cookiesB64 ? { cookiesB64 } : {}),
+        ...(proxies ? { proxies } : {}),
+      };
+    } else {
+      // Fall back to Oracle VM search (yt-dlp)
+      process.stderr.write(`Sending roster: ${rosterLabel}\n`);
+      postBody = {
+        rosterContent,
+        minDuration: args.minDuration,
+        limit: args.total,
+        ...(cookiesB64 ? { cookiesB64 } : {}),
+        ...(proxies ? { proxies } : {}),
+      };
+    }
   } else {
     // Render server reads the roster itself from its own copy of the repo
     if (proxies) {
