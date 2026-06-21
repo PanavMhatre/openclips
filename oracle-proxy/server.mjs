@@ -54,9 +54,9 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
     const videoList = [];
 
     if (preSearchedUrls && preSearchedUrls.length > 0) {
-      // Caller already searched — just download these specific URLs
-      console.log(`[oracle-proxy] download-only mode: ${preSearchedUrls.length} pre-searched URL(s)`);
-      for (const v of preSearchedUrls.slice(0, Math.max(limitPerChannel, 1))) {
+      // Caller already searched — try all provided URLs (download loop stops after limitPerChannel successes)
+      console.log(`[oracle-proxy] download-only mode: ${preSearchedUrls.length} pre-searched URL(s), need ${limitPerChannel}`);
+      for (const v of preSearchedUrls) {
         videoList.push({ url: v.url, title: v.title || v.url, duration: v.duration || 0, channel: v.channel || "" });
       }
     } else {
@@ -109,41 +109,60 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
 
     // Download each video — serve directly over HTTP, no GitHub upload
     const downloaded = [];
+    const downloadErrors = [];
     for (const video of videoList) {
+      if (downloaded.length >= limitPerChannel) break; // stop once we have enough
       const safeTitle = video.title.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 60);
       const fileName = `${safeTitle}.mp4`;
       const outPath = join(fileDir, fileName);
-      try {
-        await new Promise((resolve, reject) => {
-          const args = [
-            "--no-check-certificate",
-            // Cap at 480p to keep files manageable; podcast content doesn't need 1080p
-            "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best",
-            "--merge-output-format", "mp4",
-            "-o", outPath,
-            "--no-playlist",
-            "--extractor-args", "youtube:player_client=ios,android,web",
-          ];
-          if (cookiesPath) args.push("--cookies", cookiesPath);
-          if (proxyUrl) args.push("--proxy", proxyUrl);
-          args.push(video.url);
 
-          const proc = spawn("yt-dlp", args, { timeout: 600000 });
-          proc.stderr.on("data", d => process.stderr.write(d));
-          proc.on("close", code => code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}`)));
-          proc.on("error", reject);
-        });
+      const tryDownload = (useProxy) => new Promise((resolve, reject) => {
+        const args = [
+          "--no-check-certificate",
+          "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best",
+          "--merge-output-format", "mp4",
+          "-o", outPath,
+          "--no-playlist",
+          "--extractor-args", "youtube:player_client=ios,android,web",
+          "--retries", "2",
+        ];
+        if (cookiesPath) args.push("--cookies", cookiesPath);
+        if (useProxy && proxyUrl) args.push("--proxy", proxyUrl);
+        args.push(video.url);
+        const proc = spawn("yt-dlp", args, { timeout: 300000 });
+        let stderr = "";
+        proc.stderr.on("data", d => { stderr += d; process.stderr.write(d); });
+        proc.on("close", code => code === 0 ? resolve() : reject(new Error(`exit ${code}: ${stderr.slice(-200)}`)));
+        proc.on("error", reject);
+      });
+
+      try {
+        // Try with proxy first (residential IP avoids geo-blocks), then without
+        if (proxyUrl) {
+          try {
+            await tryDownload(true);
+          } catch (proxyErr) {
+            console.error(`[oracle-proxy] proxy download failed for ${video.title.slice(0, 50)}: ${proxyErr.message.slice(0, 150)}`);
+            console.log(`[oracle-proxy] retrying without proxy...`);
+            await tryDownload(false);
+          }
+        } else {
+          await tryDownload(false);
+        }
 
         const downloadUrl = `${PUBLIC_URL}/files/${jobId}/${encodeURIComponent(fileName)}`;
         downloaded.push({ url: video.url, title: video.title, duration: video.duration, channel: video.channel, githubUrl: downloadUrl });
         console.log(`[oracle-proxy] ready: ${video.title.slice(0, 60)} → ${downloadUrl}`);
       } catch (err) {
-        console.error(`[oracle-proxy] download failed: ${video.title.slice(0, 60)} — ${err.message}`);
+        const msg = `${video.title.slice(0, 50)}: ${err.message.slice(0, 150)}`;
+        console.error(`[oracle-proxy] download failed (proxy+direct): ${msg}`);
+        downloadErrors.push(msg);
         await unlink(outPath).catch(() => {});
       }
     }
 
-    jobs[jobId] = { ok: true, status: "done", count: downloaded.length, videos: downloaded };
+    const errorSummary = downloadErrors.length ? ` Errors: ${downloadErrors.slice(0, 2).join(" | ")}` : "";
+    jobs[jobId] = { ok: downloaded.length > 0, status: "done", count: downloaded.length, videos: downloaded, error: downloaded.length === 0 ? `all downloads failed.${errorSummary}` : undefined };
     console.log(`[oracle-proxy] job ${jobId} done — ${downloaded.length}/${videoList.length} videos`);
 
     // Auto-delete files after TTL
