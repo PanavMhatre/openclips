@@ -201,6 +201,16 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log('Health:',JSON.stringify(d,null,2))"
 
+      - name: Test Oracle VM connectivity
+        if: ${{ github.event.inputs.skip_fetch != 'true' }}
+        run: |
+          if [ -z "$OPENCLIPS_ORACLE_URL" ]; then
+            echo "OPENCLIPS_ORACLE_URL is not set — will try Render fallback"
+          else
+            echo "Testing Oracle VM: $OPENCLIPS_ORACLE_URL"
+            curl -v --max-time 15 "$OPENCLIPS_ORACLE_URL/health" 2>&1 || echo "Oracle VM health check failed (exit $?)"
+          fi
+
       - name: Fetch newest YouTube videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
         env:
