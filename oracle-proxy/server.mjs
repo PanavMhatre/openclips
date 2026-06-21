@@ -60,9 +60,10 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           "--no-warnings",
         ];
         if (cookiesPath) args.push("--cookies", cookiesPath);
+        if (proxyUrl) args.push("--proxy", proxyUrl);
         args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
 
-        const proc = spawn("yt-dlp", args, { timeout: 60000 });
+        const proc = spawn("yt-dlp", args, { timeout: 120000 });
         let out = "", err = "";
         proc.stdout.on("data", d => out += d);
         proc.stderr.on("data", d => { err += d; process.stderr.write(d); });
