@@ -3,26 +3,25 @@
 // Exposes the same /api/fetch-videos interface as the Render server.
 //
 // Env vars (set in /etc/oracle-proxy.env):
-//   FETCH_SECRET          Bearer token (must match OPENCLIPS_FETCH_SECRET in GitHub)
-//   GITHUB_STORAGE_TOKEN  Personal access token with repo write access
-//   GITHUB_STORAGE_REPO   e.g. PanavMhatre/openclips-media
-//   GITHUB_STORAGE_BRANCH default: main
-//   GITHUB_STORAGE_DIR    default: clips
-//   PORT                  default: 7474
+//   FETCH_SECRET   Bearer token (must match OPENCLIPS_FETCH_SECRET in GitHub)
+//   PUBLIC_URL     Base URL GitHub Actions uses to reach this server (e.g. http://64.181.199.39:7474)
+//   PORT           default: 7474
+//
+// Files are served directly from the VM over HTTP — no GitHub upload needed.
+// Downloaded files are auto-deleted 2 hours after the job completes.
 
 import { createServer } from "node:http";
+import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { writeFile, unlink, readFile } from "node:fs/promises";
+import { writeFile, unlink, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 
 const PORT = Number(process.env.PORT || 7474);
 const SECRET = process.env.FETCH_SECRET || "";
-const STORAGE_TOKEN = process.env.GITHUB_STORAGE_TOKEN || "";
-const STORAGE_REPO = process.env.GITHUB_STORAGE_REPO || "PanavMhatre/openclips-media";
-const STORAGE_BRANCH = process.env.GITHUB_STORAGE_BRANCH || "main";
-const STORAGE_DIR = (process.env.GITHUB_STORAGE_DIR || "clips").replace(/^\/+|\/+$/g, "");
+const PUBLIC_URL = (process.env.PUBLIC_URL || `http://64.181.199.39:${PORT}`).replace(/\/+$/, "");
+const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 const jobs = {};
 const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
@@ -44,6 +43,9 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
     cookiesPath = join(tmpdir(), `cookies-${jobId}.txt`);
     await writeFile(cookiesPath, Buffer.from(cookiesB64, "base64").toString("utf8"));
   }
+
+  const fileDir = join(tmpdir(), "oracle-files", jobId);
+  await mkdir(fileDir, { recursive: true });
 
   try {
     // Search each channel via yt-dlp
@@ -67,11 +69,11 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
         proc.on("close", code => {
           const results = [];
           if (!out.trim()) {
-            console.error(`[oracle-proxy] ${ch.name}: yt-dlp exit ${code}, no stdout. stderr: ${err.slice(0, 500)}`);
+            console.error(`[oracle-proxy] ${ch.name}: yt-dlp exit ${code}, no stdout. stderr: ${err.slice(0, 300)}`);
           }
           for (const line of out.trim().split("\n")) {
             if (!line.trim()) continue;
-            const [url, title, duration, uploader, vcodec] = line.split("\t");
+            const [url, title, duration] = line.split("\t");
             if (!url || !title) continue;
             const dur = Number(duration);
             if (dur > 0 && dur < minDuration) continue;
@@ -87,20 +89,22 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
     }
 
     if (!videoList.length) {
-      jobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results across all channels — check Oracle VM journalctl -u oracle-proxy for stderr", count: 0, videos: [] };
+      jobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results across all channels", count: 0, videos: [] };
       return;
     }
 
-    // Download each video and upload to GitHub storage
+    // Download each video — serve directly over HTTP, no GitHub upload
     const downloaded = [];
     for (const video of videoList) {
       const safeTitle = video.title.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 60);
-      const outPath = join(tmpdir(), `${safeTitle}-${jobId}.mp4`);
+      const fileName = `${safeTitle}.mp4`;
+      const outPath = join(fileDir, fileName);
       try {
         await new Promise((resolve, reject) => {
           const args = [
             "--no-check-certificate",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            // Cap at 480p to keep files manageable; podcast content doesn't need 1080p
+            "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best",
             "--merge-output-format", "mp4",
             "-o", outPath,
             "--no-playlist",
@@ -115,24 +119,11 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
           proc.on("error", reject);
         });
 
-        // Upload to GitHub
-        const fileBytes = await readFile(outPath);
-        const b64 = fileBytes.toString("base64");
-        const fileName = `${safeTitle}.mp4`;
-        const ghRes = await fetch(`https://api.github.com/repos/${STORAGE_REPO}/contents/${STORAGE_DIR}/${fileName}`, {
-          method: "PUT",
-          headers: { Authorization: `token ${STORAGE_TOKEN}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `Upload ${fileName}`, content: b64, branch: STORAGE_BRANCH }),
-        });
-
-        if (!ghRes.ok) throw new Error(`GitHub upload failed: ${ghRes.status} ${await ghRes.text()}`);
-
-        const githubUrl = `https://raw.githubusercontent.com/${STORAGE_REPO}/${STORAGE_BRANCH}/${STORAGE_DIR}/${fileName}`;
-        await unlink(outPath).catch(() => {});
-        downloaded.push({ url: video.url, title: video.title, duration: video.duration, channel: video.channel, githubUrl });
-        console.log(`[oracle-proxy] uploaded: ${video.title.slice(0, 60)}`);
+        const downloadUrl = `${PUBLIC_URL}/files/${jobId}/${encodeURIComponent(fileName)}`;
+        downloaded.push({ url: video.url, title: video.title, duration: video.duration, channel: video.channel, githubUrl: downloadUrl });
+        console.log(`[oracle-proxy] ready: ${video.title.slice(0, 60)} → ${downloadUrl}`);
       } catch (err) {
-        console.error(`[oracle-proxy] failed: ${video.title.slice(0, 60)} — ${err.message}`);
+        console.error(`[oracle-proxy] download failed: ${video.title.slice(0, 60)} — ${err.message}`);
         await unlink(outPath).catch(() => {});
       }
     }
@@ -140,9 +131,13 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
     jobs[jobId] = { ok: true, status: "done", count: downloaded.length, videos: downloaded };
     console.log(`[oracle-proxy] job ${jobId} done — ${downloaded.length}/${videoList.length} videos`);
 
+    // Auto-delete files after TTL
+    setTimeout(() => rm(fileDir, { recursive: true, force: true }).catch(() => {}), FILE_TTL_MS);
+
   } catch (err) {
     console.error(`[oracle-proxy] job ${jobId} crashed:`, err.message);
     jobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+    rm(fileDir, { recursive: true, force: true }).catch(() => {});
   } finally {
     if (cookiesPath) await unlink(cookiesPath).catch(() => {});
   }
@@ -156,6 +151,26 @@ function send(res, code, data) {
 const server = createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     return send(res, 200, { ok: true, service: "oracle-download-proxy" });
+  }
+
+  // Serve downloaded files (no auth — URL contains unguessable job UUID)
+  if (req.method === "GET" && req.url.startsWith("/files/")) {
+    const parts = req.url.slice("/files/".length).split("/");
+    if (parts.length >= 2) {
+      const jobId = parts[0];
+      const fileName = decodeURIComponent(parts[1]);
+      const filePath = join(tmpdir(), "oracle-files", jobId, fileName);
+      try {
+        const stream = createReadStream(filePath);
+        res.writeHead(200, { "Content-Type": "video/mp4" });
+        stream.pipe(res);
+        stream.on("error", () => { res.end(); });
+        return;
+      } catch {
+        return send(res, 404, { error: "File not found" });
+      }
+    }
+    return send(res, 404, { error: "Not found" });
   }
 
   if (SECRET) {
@@ -199,6 +214,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[oracle-proxy] listening on port ${PORT}`);
-  if (!STORAGE_TOKEN) console.warn("[oracle-proxy] WARNING: GITHUB_STORAGE_TOKEN not set — uploads will fail");
+  console.log(`[oracle-proxy] files served at ${PUBLIC_URL}/files/<jobId>/<filename>`);
   if (!SECRET) console.warn("[oracle-proxy] WARNING: FETCH_SECRET not set — endpoint is unauthenticated");
 });
