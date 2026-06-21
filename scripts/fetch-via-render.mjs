@@ -90,6 +90,7 @@ async function main() {
       minDuration: args.minDuration,
       limit: args.total,
       ...(cookiesB64 ? { cookiesB64 } : {}),
+      ...(proxies ? { proxies } : {}),
     };
   } else {
     // Render server reads the roster itself from its own copy of the repo

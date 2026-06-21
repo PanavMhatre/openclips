@@ -37,7 +37,7 @@ function parseRoster(md) {
   return channels;
 }
 
-async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64) {
+async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl) {
   let cookiesPath = null;
   if (cookiesB64) {
     cookiesPath = join(tmpdir(), `cookies-${jobId}.txt`);
@@ -111,6 +111,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
             "--extractor-args", "youtube:player_client=ios,android,web",
           ];
           if (cookiesPath) args.push("--cookies", cookiesPath);
+          if (proxyUrl) args.push("--proxy", proxyUrl);
           args.push(video.url);
 
           const proc = spawn("yt-dlp", args, { timeout: 600000 });
@@ -193,17 +194,20 @@ const server = createServer(async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(body); } catch { return send(res, 400, { error: "Invalid JSON" }); }
 
-    const { rosterContent, minDuration = 1200, limit = 1, cookiesB64 } = parsed;
+    const { rosterContent, minDuration = 1200, limit = 1, cookiesB64, proxies } = parsed;
     if (!rosterContent) return send(res, 400, { error: "rosterContent required" });
 
     const channels = parseRoster(rosterContent);
     if (!channels.length) return send(res, 400, { error: "No channels parsed from roster" });
 
+    const proxyUrl = proxies ? proxies.split(/[,\n]/).map(s => s.trim()).filter(Boolean)[0] : null;
+    if (proxyUrl) console.log(`[oracle-proxy] using proxy for downloads: ${proxyUrl.slice(0, 40)}...`);
+
     const jobId = randomUUID();
     jobs[jobId] = { ok: false, status: "running", count: 0, videos: [] };
     send(res, 200, { ok: true, jobId, status: "running" });
 
-    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64).catch(err => {
+    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, proxyUrl).catch(err => {
       jobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
     });
     return;
