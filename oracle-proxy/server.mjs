@@ -69,6 +69,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
             "--no-check-certificate", "--no-playlist", "--flat-playlist",
             "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
             "--no-warnings",
+            "--extractor-args", "youtube:player_client=ios,android,web",
           ];
           if (cookiesPath) args.push("--cookies", cookiesPath);
           if (proxyUrl) args.push("--proxy", proxyUrl);
