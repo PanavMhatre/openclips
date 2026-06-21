@@ -70,8 +70,8 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64)
             const [url, title, duration, uploader, vcodec] = line.split("\t");
             if (!url || !title) continue;
             const dur = Number(duration);
-            if (!dur || dur < minDuration) continue;
-            if (vcodec?.trim().toLowerCase() === "none" || AUDIO_RE.test(title)) continue;
+            if (dur > 0 && dur < minDuration) continue;
+            if (AUDIO_RE.test(title)) continue;
             results.push({ url: url.trim(), title: title.trim(), duration: dur, channel: ch.name });
             if (results.length >= limit) break;
           }
