@@ -3261,12 +3261,10 @@ RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end se
 
 FIELD RULES:
 - "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
-- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — ALWAYS name the specific player, team, company, or person involved. Create an instant knowledge gap with a concrete claim or stat.
-  Finance/Tech — Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, WILL DESTROY, GOT CAUGHT, QUIETLY SOLD.
-  FIRE Finance: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "WARREN BUFFETT QUIETLY SOLD"
-  Sports — Name the player AND the specific moment/stat. Generic superlatives kill retention; concrete specifics drive shares.
-  FIRE Sports: "MCILROY BLEW A 6-SHOT LEAD" | "SPAIN SCORES IN 2 MINUTES" | "THIS PUTT AT SHINNECOCK WINS IT" | "HOW A 6-SHOT LEAD COLLAPSES" | "WORLD CUP COMEBACK NOBODY SAW" | "SCHEFFLER BIRDIES THE LAST THREE" | "LEBRON'S BUZZER BEATER ENDS IT" | "CURRY BREAKS THE ALL-TIME RECORD"
-  DEAD: "Nice Shot" | "Big Moment" | "You Won't Believe" | "Great Play" | "Podcast Moment" | "AI Update" | "Market Thoughts" | "Interesting Insight"
+- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — name the REAL person or company, create an instant knowledge gap. Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, IS OVER, WILL DESTROY, GOT CAUGHT, FINALLY BROKE, QUIETLY SOLD.
+  FIRE Finance/Tech: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "APPLE KNOWS IT'S LOSING" | "THEY DESTROYED YOUR 401K" | "WARREN BUFFETT QUIETLY SOLD"
+  FIRE Sports: name the player AND the exact moment/stat — "MCILROY BLEW A 6-SHOT LEAD" | "SPAIN SCORES IN 2 MINUTES" | "49-FOOT PUTT AT SHINNECOCK WINS IT" | "HOW A 6-SHOT LEAD COLLAPSES" | "WORLD CUP COMEBACK NOBODY SAW" | "SCHEFFLER BIRDIES LAST THREE HOLES" | "LEBRON BUZZER BEATER ENDS IT" | "CURRY BREAKS THE ALL-TIME RECORD"
+  DEAD: "Nice Shot" | "Big Moment" | "You Won't Believe" | "Great Play" | "Podcast Moment" | "AI Update" | "Market Thoughts" | "Big News" | "Interesting Insight" | "Revenue Performance"
 - "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
 - "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
 - "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
