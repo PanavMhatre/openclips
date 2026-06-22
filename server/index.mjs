@@ -3261,9 +3261,12 @@ RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end se
 
 FIELD RULES:
 - "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
-- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — name the REAL person or company, create an instant knowledge gap. Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, IS OVER, WILL DESTROY, GOT CAUGHT, FINALLY BROKE, QUIETLY SOLD.
-  FIRE: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "APPLE KNOWS IT'S LOSING" | "THEY DESTROYED YOUR 401K" | "WARREN BUFFETT QUIETLY SOLD"
-  DEAD: "Podcast Moment" | "AI Update" | "Market Thoughts" | "Big News" | "Interesting Insight" | "Revenue Performance"
+- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — ALWAYS name the specific player, team, company, or person involved. Create an instant knowledge gap with a concrete claim or stat.
+  Finance/Tech — Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, WILL DESTROY, GOT CAUGHT, QUIETLY SOLD.
+  FIRE Finance: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "WARREN BUFFETT QUIETLY SOLD"
+  Sports — Name the player AND the specific moment/stat. Generic superlatives kill retention; concrete specifics drive shares.
+  FIRE Sports: "MCILROY BLEW A 6-SHOT LEAD" | "SPAIN SCORES IN 2 MINUTES" | "THIS PUTT AT SHINNECOCK WINS IT" | "HOW A 6-SHOT LEAD COLLAPSES" | "WORLD CUP COMEBACK NOBODY SAW" | "SCHEFFLER BIRDIES THE LAST THREE" | "LEBRON'S BUZZER BEATER ENDS IT" | "CURRY BREAKS THE ALL-TIME RECORD"
+  DEAD: "Nice Shot" | "Big Moment" | "You Won't Believe" | "Great Play" | "Podcast Moment" | "AI Update" | "Market Thoughts" | "Interesting Insight"
 - "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
 - "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
 - "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
@@ -3643,7 +3646,7 @@ function isWeakHook(value) {
   // Hooks that are just descriptive labels with no tension/claim
   if (/^(ai and|tech and|podcast|money and|finance and|sports and)\b/i.test(lower)) return true;
   if (/^(\d+\s+\w+)$/.test(text)) return true; // bare stats like "100 million travelers"
-  if (/^\$?\d/.test(text) && !/\b(ai|stars|skills|why|how|changes|cost|risk|advantage|moat|math|broken|scale|lesson|beats|doubles|exposed|wrong|mistake|lie|lied)\b/i.test(text)) return true;
+  if (/^\$?\d/.test(text) && !/\b(ai|stars|skills|why|how|changes|cost|risk|advantage|moat|math|broken|scale|lesson|beats|doubles|exposed|wrong|mistake|lie|lied|foot|yard|meter|shot|putt|goal|point|second|minute|inning|stroke|birdie|eagle|hole)\b/i.test(text)) return true;
   return false;
 }
 
@@ -3699,6 +3702,28 @@ function lessonHookFromParts({ title = "", focus = "", context = {}, text = "" }
   if (/(crash|collapse|bubble|crisis)/i.test(lower)) {
     return "This Market Is About To Break";
   }
+  // Sports fallbacks — fire when transcript is about a game, match, or athlete
+  if (/(golf|putt|birdie|eagle|bogey|pga|open|masters|ryder|shinnecock|fairway|green|pin|chip)/i.test(lower)) {
+    return `${possessive(subject)} Lead Just Collapsed`;
+  }
+  if (/(world cup|premier league|champions league|la liga|fifa|bundesliga|serie a)/i.test(lower)) {
+    return "This Goal Changed The Match";
+  }
+  if (/(goal|soccer|football|penalty|free kick|offside|assist)/i.test(lower)) {
+    return `${possessive(subject)} Goal Nobody Saw Coming`;
+  }
+  if (/(nba|basketball|buzzer|game winner|overtime|dunk|three pointer|lebron|curry|durant|jayson|giannis)/i.test(lower)) {
+    return `${possessive(subject)} Clutch Moment Changes Everything`;
+  }
+  if (/(nfl|touchdown|quarterback|blitz|interception|mahomes|brady|hurts|allen|lamar)/i.test(lower)) {
+    return `${possessive(subject)} Play Nobody Saw Coming`;
+  }
+  if (/(comeback|lead.*collapse|blew.*lead|lead.*blew|momentum|shift|turning point)/i.test(lower)) {
+    return "How This Lead Completely Collapsed";
+  }
+  if (/(record|historic|first time|never before|all.?time|milestone)/i.test(lower)) {
+    return `${possessive(subject)} Historic Moment Explained`;
+  }
   const keyword = lessonKeyword(lower, context);
   if (subject && keyword) return `${possessive(subject)} ${keyword} Changes Everything`;
   if (subject) return `Nobody Told You About ${subject}`;
@@ -3713,15 +3738,17 @@ function titleFromFocus(focus, context = {}, text = "") {
 function subjectFromContext(context = {}, title = "", text = "") {
   const combined = `${title} ${context.contextLine || ""} ${context.topic || ""} ${context.guest || ""} ${context.channel || ""} ${text}`;
   const known = [
-    "Airbnb",
-    "Tesla",
-    "Anthropic",
-    "DeepSeek",
-    "Descript",
-    "Canada",
-    "Trump",
-    "Inflation",
-    "AI",
+    // Finance/Tech
+    "Airbnb", "Tesla", "Anthropic", "DeepSeek", "Descript", "Canada", "Trump", "Inflation", "AI",
+    // Golf
+    "McIlroy", "Scheffler", "Rory", "Tiger", "Spieth", "Morikawa", "Bryson", "Rahm", "Hovland", "Fleetwood",
+    // Soccer / World Cup
+    "Messi", "Ronaldo", "Mbappé", "Mbappe", "Haaland", "Vinicius", "Bellingham", "Rodri",
+    "Spain", "England", "France", "Argentina", "Brazil", "Germany", "USA", "Portugal",
+    // NBA
+    "LeBron", "Curry", "Durant", "Giannis", "Luka", "Jayson", "Tatum", "Embiid",
+    // NFL
+    "Mahomes", "Brady", "Hurts", "Allen", "Lamar", "Jackson",
   ];
   const found = known.find((item) => new RegExp(`\\b${item}\\b`, "i").test(combined));
   if (found) return found;
