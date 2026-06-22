@@ -105,20 +105,18 @@ async function generateQueriesWithGroq(headlines, trendingTitles) {
     trendingTitles.slice(0, 12).forEach(t => contextLines.push(`• ${t}`));
   }
 
-  const prompt = `Today is ${TODAY}. You are a viral clip editor for a finance, tech, and business podcast channel.
+  const prompt = `Today is ${TODAY}. You are a viral short-form clip editor. Your job is to find long-form YouTube podcasts and interviews that will produce the most shareable 30-60 second clips for TikTok and Reels.
 
 ${contextLines.join("\n")}
 
-Your job: generate 8 YouTube search queries that will find the best long-form podcast or interview videos uploaded in the last 1-7 days covering the HOTTEST topics above.
+Your job: generate 8 YouTube search queries that will find recent long-form podcast episodes where KNOWN HOSTS discuss the hottest topics from the headlines above.
 
-RULES:
-- Target the specific person, company, or event making news RIGHT NOW
-- Search for interviews, podcasts, and in-depth discussions (20+ minute videos) — NOT news clips or shorts
-- Good hosts to target when relevant: Lex Fridman, Alex Hormozi, My First Million, All-In Podcast, Diary of a CEO, Codie Sanchez, Y Combinator, a16z, Acquired, Invest Like the Best, Tim Ferriss, Andrew Huberman, Joe Rogan (business/tech episodes), Chamath Palihapitiya
-- Also look for: conference keynotes, product launches, earnings call reactions, VC discussions
-- Each query should be specific: name the PERSON or COMPANY making news + "podcast" or "interview" or "${YEAR}"
-- Good format: "[Person] interview ${YEAR}", "[Company] founder podcast", "[Topic] explained podcast ${YEAR}", "[Person] on [hot topic]"
-- Avoid queries that return 60-second news clips — add "full podcast" or "long" if needed
+CRITICAL RULES:
+- Every query MUST route through a known viral podcast channel — NOT a news network, press conference, or news segment
+- Known viral hosts to target: Lex Fridman, Alex Hormozi, My First Million (Sam Parr + Shaan Puri), All-In Podcast (Chamath + Sacks + Friedberg), Diary of a CEO (Steven Bartlett), Codie Sanchez, Y Combinator, a16z, Acquired, Invest Like the Best, Tim Ferriss, Andrew Huberman, Joe Rogan (business/tech only), Patrick Bet-David Valuetainment, Dave Ramsey, Graham Stephan, The Plain Bagel
+- Match the topic to the RIGHT host: Fed/macro → All-In Podcast or Chamath; AI/tech → Lex Fridman or a16z; business/money → Alex Hormozi or My First Million; startups → Y Combinator or a16z; health/performance → Huberman
+- Format: "[Host/Show name] [topic] ${YEAR}" or "[Host] on [topic]" or "[Show] latest episode ${YEAR}"
+- NEVER query for: news anchors, CNN, CNBC, Fox News, Bloomberg, press conferences, congressional hearings — these produce unusable talking-head news clips
 - Output EXACTLY 8 queries, one per line, nothing else (no numbers, no bullets, no explanation)`;
 
   try {

@@ -284,11 +284,7 @@ jobs:
             wait();
           "
 
-      - name: Enhance clips with Pixabay images
-        timeout-minutes: 20
-        continue-on-error: true
-        run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
-
+      # Sports clips already contain action footage — skip Pixabay image overlay
       - name: Push enhanced clips to storage repo
         run: |
           CLIPS=$(cat /tmp/oc-top8.json | node -e "

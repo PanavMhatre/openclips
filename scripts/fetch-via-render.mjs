@@ -69,11 +69,21 @@ async function searchYouTubeApi(channels, minDurationSec, totalLimit) {
       for (const item of data.items || []) {
         const videoId = item.id?.videoId;
         if (!videoId || seen.has(videoId)) continue;
+        const title   = item.snippet?.title || "";
+        const channel = item.snippet?.channelTitle || ch.name;
+        // Skip news networks — they produce press conferences and news segments,
+        // not podcast clips. Only allow through for the sports roster.
+        const NEWS_CHANNELS = /^(CNN|CNBC|Fox News|Bloomberg|BBC News|NBC News|ABC News|CBS News|Reuters|Associated Press|AP|Sky News|Al Jazeera|C-SPAN|MSNBC|PBS NewsHour|The Young Turks|NowThis|Vox|Vice News|Guardian News|Washington Post|New York Times|Forbes|Fortune|The Economist)/i;
+        const NEWS_TITLE = /\b(press conference|live:? fed|live:? president|congressional hearing|senate hearing|white house briefing|oval office|breaking news)\b/i;
+        if (minDurationSec >= 1200 && (NEWS_CHANNELS.test(channel) || NEWS_TITLE.test(title))) {
+          process.stderr.write(`  [yt-api] skip news source: "${title.slice(0,60)}" (${channel})\n`);
+          continue;
+        }
         seen.add(videoId);
         results.push({
           url: `https://www.youtube.com/watch?v=${videoId}`,
-          title: item.snippet?.title || "",
-          channel: item.snippet?.channelTitle || ch.name,
+          title,
+          channel,
           duration: 0,
         });
       }
