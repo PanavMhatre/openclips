@@ -2,8 +2,8 @@ name: Sports Publish
 
 on:
   schedule:
-    # Every 2 hours offset by 30 min — posts 7 sports clips each run
-    - cron: '30 */2 * * *'
+    # 3 times a day: 6 AM, 2 PM, 10 PM UTC (1 AM / 9 AM / 5 PM CT)
+    - cron: '0 6,14,22 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -21,7 +21,7 @@ on:
       clip_count:
         description: 'Number of clips to post per run'
         type: string
-        default: '7'
+        default: '5'
 
 jobs:
   publish:
@@ -217,8 +217,8 @@ jobs:
         env:
           COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          CLIP_COUNT="${{ github.event.inputs.clip_count }}"
-          FETCH_TOTAL="${CLIP_COUNT:-7}"
+          # Fetch 7 source videos so the ranker has a good pool to pick 5 clips from
+          FETCH_TOTAL=7
           if [ "$DYNAMIC_ROSTER_READY" = "true" ]; then
             echo "Using dynamic roster from NewsAPI + YouTube trending (fetching ${FETCH_TOTAL} videos)"
             node scripts/fetch-via-render.mjs --roster-file=/tmp/oc-dynamic-roster.md --min-duration=120 --total="${FETCH_TOTAL}" --output=/tmp/oc-fresh-urls.json
@@ -250,7 +250,7 @@ jobs:
       - name: Rank top clips
         run: |
           TOP_N="${{ github.event.inputs.clip_count }}"
-          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-1}" --output=/tmp/oc-top8.json
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-5}" --output=/tmp/oc-top8.json
           echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));

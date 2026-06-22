@@ -2,8 +2,8 @@ name: Daily Publish
 
 on:
   schedule:
-    # Every 2 hours — posts one clip immediately each run
-    - cron: '0 */2 * * *'
+    # 2 times a day: 10 AM and 6 PM UTC (5 AM / 1 PM CT)
+    - cron: '0 10,18 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -21,7 +21,7 @@ on:
       clip_count:
         description: 'Number of clips to post per run'
         type: string
-        default: '1'
+        default: '7'
 
 jobs:
   publish:
@@ -216,7 +216,8 @@ jobs:
         env:
           COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          node scripts/fetch-via-render.mjs --total=1 --output=/tmp/oc-fresh-urls.json
+          # Fetch 3 source videos so the ranker has a good pool to select 7 clips from
+          node scripts/fetch-via-render.mjs --total=3 --output=/tmp/oc-fresh-urls.json
           echo "Videos queued:"
           cat /tmp/oc-fresh-urls.json | node -e "const a=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));a.forEach(v=>console.log(' -',v.title||v.url))"
 
@@ -241,7 +242,7 @@ jobs:
       - name: Rank top clips
         run: |
           TOP_N="${{ github.event.inputs.clip_count }}"
-          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-1}" --output=/tmp/oc-top8.json
+          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-7}" --output=/tmp/oc-top8.json
           echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));

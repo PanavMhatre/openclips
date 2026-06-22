@@ -296,8 +296,37 @@ function resolveHook(clip) {
   return raw;
 }
 
+function buildSportsHashtags(clip) {
+  const tags = [];
+  const text = `${clip.hook || ""} ${clip.title || ""} ${clip.focus || ""} ${(clip.tags || []).join(" ")}`.toLowerCase();
+  if (/world cup|fifa|soccer|football/.test(text)) tags.push("#WorldCup2026", "#FIFA");
+  if (/ufc|mma|fight|knockout/.test(text)) tags.push("#UFC", "#MMA");
+  if (/nfl|touchdown|quarterback/.test(text)) tags.push("#NFL");
+  if (/nba|basketball|buzzer/.test(text)) tags.push("#NBA");
+  if (/record|history|all.time/.test(text)) tags.push("#HistoryMade");
+  if (/comeback|impossible|nobody believed/.test(text)) tags.push("#Comeback");
+  tags.push("#Sports", "#Highlights");
+  return [...new Set(tags)].slice(0, 6).join(" ");
+}
+
 function buildPostText(clip) {
   const hook = resolveHook(clip);
+  const isSports = String(clip._projectLayout || clip.layout || "").toLowerCase() === "sports"
+    || Boolean(clip.sport || clip.teams || clip.scoreboard);
+
+  if (isSports) {
+    // Sports-specific: punchy hook + scoreboard context + emotional body + tags
+    const parts = [hook];
+    if (clip.scoreboard) parts.push(`🏟️ ${clip.scoreboard}`);
+    if (clip.focus) parts.push(`\n${clip.focus}`);
+    else if (clip.emotion) parts.push(`\n${clip.emotion.charAt(0).toUpperCase() + clip.emotion.slice(1)} moment. Watch to the end.`);
+    const momentTags = Array.isArray(clip.tags) && clip.tags.length
+      ? clip.tags.map((t) => `#${t.replace(/\s+/g, "")}`).join(" ")
+      : "";
+    parts.push(`\n${momentTags} ${buildSportsHashtags(clip)}`.trim());
+    return parts.filter(Boolean).join("\n").trim();
+  }
+
   const focus = clip.focus ? `\n\n${clip.focus}` : "";
   return `${hook}${focus}`.trim();
 }
@@ -377,12 +406,9 @@ async function main() {
     process.exit(1);
   }
 
-  const numSlots = SLOT_TIMES.length;
-  const top5 = clips.slice(0, numSlots);
-
-  if (top5.length < numSlots) {
-    process.stderr.write(`Warning: only ${top5.length} clip(s) available (expected ${numSlots}).\n`);
-  }
+  // Use all clips passed in — rank script already limited the count to the desired number.
+  // SLOT_TIMES is only used in --date (legacy) mode; --now posts all clips 2 min apart.
+  const selectedClips = clips;
 
   // Resolve channel IDs
   const channelIds = (process.env.BUFFER_CHANNEL_IDS || "")
@@ -405,7 +431,7 @@ async function main() {
     publishDate = toDateString(new Date());
     const START_LEAD_MS = 2 * 60 * 1000;
     const CLIP_GAP_MS = 2 * 60 * 1000;
-    plan = top5.map((clip, i) => {
+    plan = selectedClips.map((clip, i) => {
       const dueAt = new Date(Date.now() + START_LEAD_MS + i * CLIP_GAP_MS).toISOString();
       const mediaUrl = resolvePublicUrl(clip);
       const text = buildPostText(clip);
@@ -422,7 +448,7 @@ async function main() {
     const MIN_LEAD_MS = 5 * 60 * 1000;
     const nowMs = Date.now();
     let earliestNextMs = nowMs + MIN_LEAD_MS;
-    plan = top5.map((clip, i) => {
+    plan = selectedClips.map((clip, i) => {
       const slot = SLOT_TIMES[i] || SLOT_TIMES[SLOT_TIMES.length - 1];
       let dueAtMs = new Date(slotToIso(publishDate, slot, args.timezone)).getTime();
       if (dueAtMs < earliestNextMs) dueAtMs = earliestNextMs;
@@ -480,13 +506,16 @@ async function main() {
     `).catch(() => null);
     const used = data?.channel?.scheduledPosts?.nodes?.length ?? null;
     if (used !== null) {
-      const limit = 10; // Buffer free plan hard limit
-      const available = limit - used;
-      process.stderr.write(`  Channel ${channelId}: ${used}/${limit} slots used, ${available} available (need ${needed}).\n`);
+      // Buffer free plan has 10 slots; paid plans have 100+.
+      // Since --now mode schedules posts in the next few minutes (they publish immediately),
+      // any pending posts from the previous run are already published by the next run.
+      // Warn if close to 10 but never block — individual post failures will surface below.
+      const freeLimit = 10;
+      const available = freeLimit - used;
       if (available < needed) {
-        process.stderr.write(`\nNot enough Buffer slots on channel ${channelId} — need ${needed}, only ${available} free.\n`);
-        process.stderr.write(`No posts were created. Re-run once existing scheduled posts have published.\n`);
-        process.exit(1);
+        process.stderr.write(`  Warning: Channel ${channelId} may be near queue limit (${used} pending, need ${needed} more). Proceeding anyway — posts scheduled for immediate delivery will publish quickly.\n`);
+      } else {
+        process.stderr.write(`  Channel ${channelId}: ${used} pending, ${available} available (need ${needed}) ✓\n`);
       }
     }
   }

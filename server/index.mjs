@@ -3921,6 +3921,53 @@ function cleanCaptionToken(value) {
     .trim();
 }
 
+/**
+ * Ensure a sports hook always contains the actual team/player name.
+ *
+ * A hook is "generic" if it starts with a vague pronoun/adjective and has no
+ * proper nouns (i.e. the AI ignored the team/player specificity rule).
+ *
+ * When generic: rebuild the hook from the contextLine (most dramatic fact) +
+ * teams — e.g. "URUGUAY SCORES IN 89TH MINUTE" instead of "THIS IS INSANE".
+ */
+function specifySportsHook(rawHook, sourceContext = {}) {
+  const hook = String(rawHook || "").trim();
+  const ctx = cleanPodcastContext(sourceContext || {});
+  // channel stores "Team A vs Team B", contextLine stores the dramatic highlight
+  const teams   = String(ctx.channel || "").replace(/\s+vs\.?\s+/i, " VS ").trim();
+  const context = String(ctx.contextLine || ctx.hookAngle || "").trim();
+
+  // Detect a generic hook: starts with a vague word AND has no mixed-case proper noun
+  const GENERIC_START = /^(nobody|they|this|it|watch|history|the|a|an|what|how|why|incredible|insane|unreal|unbelievable|impossible|you won't|can't believe|wait for)\b/i;
+  // All-caps hook can't be checked for proper nouns via casing — check the raw form instead
+  const rawLower = hook.toLowerCase();
+  const hasSpecificName = Boolean(
+    // Proper noun in original (mixed case)
+    /[A-Z][a-z]{2,}/.test(hook) ||
+    // Or known country/team/player pattern in the hook text
+    /(uruguay|belgium|spain|mexico|cape verde|tunisia|japan|iran|saudi|argentina|brazil|france|germany|england|portugal|croatia|netherlands|mbappe|ronaldo|messi|neymar|curry|lebron|lakers|warriors|celtics|heat|bucks|nets|knicks|ufc|conor|khabib|adesanya|lopes|garcia|pereira)/i.test(hook)
+  );
+
+  const isGeneric = GENERIC_START.test(rawLower.trim()) && !hasSpecificName;
+
+  if (!isGeneric) return hook;  // Already specific — return as-is
+
+  // Rebuild from context: use contextLine as the action, teams as the subject
+  if (context && teams) {
+    // e.g. "URUGUAY SCORES IN 89TH MINUTE" (contextLine already has the action)
+    const action = context.toUpperCase().split(/\s+/).slice(0, 6).join(" ");
+    return action;
+  }
+  if (teams) {
+    // e.g. "URUGUAY VS CAPE VERDE" (better than a generic hook)
+    return teams.toUpperCase().split(/\s+/).slice(0, 6).join(" ");
+  }
+  if (context) {
+    return context.toUpperCase().split(/\s+/).slice(0, 7).join(" ");
+  }
+  return hook;
+}
+
 async function renderClip({
   sourcePath, outputPath, start, duration, title, hook, focus, sourceContext, score, segments,
   layout, hasAudio, sourceProbe, sport, onProgress,
@@ -3933,7 +3980,9 @@ async function renderClip({
 
   const isSports = String(layout || "").toLowerCase() === "sports";
   const captionCuesList = captionCues(segments, start, start + duration, title).slice(0, MAX_CAPTION_OVERLAYS);
-  const overlayHook = isSports ? (hook || title) : hookForOverlay({ hook, title, focus, sourceContext, segments });
+  const overlayHook = isSports
+    ? specifySportsHook(hook || title, sourceContext)
+    : hookForOverlay({ hook, title, focus, sourceContext, segments });
   const hookPath = path.join(clipOverlayDir, "hook.png");
 
   const resolveFocusTrack = () => {
@@ -4666,9 +4715,9 @@ function evenOffset(value, max) {
 function layoutViralHookLines(lines) {
   const safeLines = lines.length ? lines : ["PODCAST MOMENT"];
   const lineCount = safeLines.length;
-  // Place hook in mid-frame zone (30–52%) — below face portrait, clearly visible
-  const minTop    = Math.round(VIDEO_HEIGHT * 0.30) - 110;  // ~274px
-  const maxBottom = Math.round(VIDEO_HEIGHT * 0.52) - 110;  // ~555px
+  // Place hook near the top of the frame (5–22%) — punchy and immediately visible
+  const minTop    = Math.round(VIDEO_HEIGHT * 0.05);   // ~64px
+  const maxBottom = Math.round(VIDEO_HEIGHT * 0.22);   // ~282px
   let hookSize = Math.round((lineCount > 2 ? 58 : lineCount > 1 ? 68 : 78) * VIDEO_SCALE);
   let hookStroke = Math.round(12 * VIDEO_SCALE);
   let lineHeight = Math.round((hookSize + 8) * VIDEO_SCALE_Y);
@@ -4727,9 +4776,9 @@ async function createHookOverlay(hook, _score, outputPath, sourceContext = {}) {
 
 function layoutPodcastCaptionLines(lineCount) {
   const count = Math.max(1, lineCount);
-  // Caption zone: below hook (52%), well above image card
-  const topLimit = Math.round(VIDEO_HEIGHT * 0.54) + 25;   // ~716px
-  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.70) + 25; // ~921px
+  // Caption zone: lower portion of frame (72–86%), above the progress bar
+  const topLimit = Math.round(VIDEO_HEIGHT * 0.72);    // ~922px
+  const bottomLimit = Math.round(VIDEO_HEIGHT * 0.86); // ~1101px
   const available = Math.max(Math.round(56 * VIDEO_SCALE_Y), bottomLimit - topLimit);
   let captionSize = Math.round(56 * VIDEO_SCALE);
   let captionStroke = Math.round(10 * VIDEO_SCALE);
@@ -5577,7 +5626,7 @@ async function inferSportsContext({ project, segments, keySlot } = {}) {
     .map((s) => `${formatClock(s.start)} ${String(s.text || "").replace(/\s+/g, " ").trim()}`)
     .join("\n").slice(0, 4000);
 
-  const prompt = `Infer sports broadcast context.
+  const prompt = `Infer sports broadcast context from the title, description, and commentary.
 
 Title: ${project.title}
 Sport: ${sport}
@@ -5588,7 +5637,7 @@ Commentary excerpt:
 ${transcript}
 
 Return ONLY JSON:
-{"teams":"Team A vs Team B or empty","sport":"${sport}","event":"game or tournament name if clear","contextLine":"short 3-6 word context","hookAngle":"what makes this game compelling"}`;
+{"teams":"EXACT team names e.g. Uruguay vs Cape Verde — empty if unknown","sport":"${sport}","event":"tournament + round e.g. 2026 FIFA World Cup Group Stage","contextLine":"most dramatic thing that happened in 4-6 words e.g. Uruguay scores in 89th minute","hookAngle":"the most shareable fact with specific team/player names e.g. Cape Verde nearly upset Uruguay at the World Cup"}`;
 
   const _sportsCtxModel = groqChatModel();
   const response = await withGroqRetry((client) => client.chat.completions.create({
@@ -5626,33 +5675,42 @@ async function planSportsClips({ project, segments, duration, keySlot } = {}) {
   const transcript = compactTranscriptForPrompt(analysisChunks);
   const context = project.sourceContext || {};
 
-  const prompt = `You are a viral sports clip editor. Your ONLY job is finding moments people will share, replay, and comment on.
+  const prompt = `You are an elite sports clip editor for viral social media. Your ONLY job is finding moments that stop a thumb, trigger a share, and pull a comment. Every clip needs to feel like something JUST HAPPENED that people NEED to see.
 
 Title: ${project.title}
 Teams: ${context.teams || context.channel || "Unknown"}
 Event: ${context.event || sport}
 What makes this compelling: ${context.hookAngle || `Best ${sport} moments`}
 
-VIRAL SPORTS MOMENTS — hunt for these:
-1. RECORD-BREAKERS — any stat milestone, all-time record, franchise first
-2. CLUTCH MOMENTS — tied game, final seconds, must-score/must-stop situations
-3. DISBELIEF PLAYS — something so good the commentator loses composure
-4. COMEBACK SWINGS — lead changes, momentum shifts that flip the entire narrative
-5. CROWD ERUPTION — plays where the crowd noise tells the story alone
-6. CONTROVERSIAL CALLS — anything disputed, flagrant, ejection-worthy
-7. PLAYER REACTIONS — raw celebrations, frustration, teammates going wild
-8. HISTORIC FIRSTS — debut records, season bests, generational plays
+VIRAL MOMENTS TO HUNT (ranked by shareability):
+1. STUNNER PLAYS — impossible goals, miracle saves, ridiculous athleticism that defies belief
+2. RECORD-BREAKERS — any stat milestone, all-time record, tournament first, franchise history
+3. CLUTCH MOMENTS — tied game, final minute/seconds, must-score situations under maximum pressure
+4. COMEBACK SWINGS — dramatic lead changes that flip the entire emotional narrative
+5. DISBELIEF REACTIONS — commentator or crowd loses composure, players in shock, benches erupt
+6. CONTROVERSIAL DRAMA — disputed calls, red cards, ejections, VAR decisions, crowd anger
+7. HISTORIC FIRSTS — debut standouts, season bests, generational performances people will remember forever
+8. RAW EMOTION — raw celebrations, devastation, teammates going absolutely wild
 
-RULES:
+HOOK TEXT RULES (this is the MOST IMPORTANT field):
+- 4-9 ALL-CAPS words. Must make someone STOP scrolling AND know EXACTLY what they're watching.
+- MANDATORY: every hook MUST contain the ACTUAL team name(s) AND/OR the player's name. No exceptions.
+- Formula: [TEAM/PLAYER] + [WHAT HAPPENED] + [STAKES/DRAMA]
+  PERFECT: "URUGUAY STUNS JAPAN IN THE FINAL MINUTE", "MBAPPE SCORES FROM 60 YARDS OUT",
+           "BELGIUM COMEBACK SHOCKS THE WORLD CUP", "CAPE VERDE'S IMPOSSIBLE GOAL",
+           "LOPES KNOCKS OUT GARCIA IN ROUND 2", "SPAIN SCORES 3 IN 7 MINUTES??",
+           "MEXICO TIES IT AFTER BEING DOWN 2",  "TUNISIA BEATS JAPAN — NOBODY SAW THIS"
+  BANNED (too generic — zero context): "NOBODY BELIEVED THIS", "THEY COULDN'T STOP IT",
+           "WATCH WHAT HAPPENS", "HISTORY MADE", "THIS IS INSANE", "INCREDIBLE MOMENT"
+- Add emotional charge after the team/player: STUNS, SHOCKS, DESTROYS, IMPOSSIBLE, ROBBERY,
+           BREAKS THE RECORD, TIES IT LATE, BANNED??, DISALLOWED??, UNPLAYABLE, ON ANOTHER LEVEL
+- Add drama punctuation ?? or !! for controversial/disbelief moments
 - Return 5 to 8 clips. Rank by how much someone would NEED to share this.
 - Each clip: 15-55 seconds. Include lead-up + the play + immediate reaction.
-- "hook": 3-7 ALL-CAPS words that serve as the on-screen title. ALWAYS name the player and/or team. Be specific.
-  GREAT: "CURRY BREAKS ALL-TIME RECORD", "LEBRON GAME WINNER AT BUZZER", "WARRIORS COMPLETE THE COMEBACK", "REF BLOWS THIS CALL??"
-  BAD: "Nice Play", "Big Moment", "Good Shot", "Highlights"
 - "tags": 2-4 moment-type labels (e.g. ["Buzzer beater", "Game winner", "Record"])
 - "scoreboard": score at the moment if inferable from commentary (e.g. "LAL 108 · GSW 110")
 - "players": comma-separated names of players involved in the play
-- "score": virality 0-99. Buzzer beaters, records, ejections = 90+. Good plays = 70-85.
+- "score": virality 0-99. Stunner/record/disbelief = 90+. Clutch plays = 80-89. Good plays = 70-79.
 - Return ONLY JSON:
 {"clips":[{"chunk":1,"start":0,"end":30,"title":"short title","hook":"PUNCHY HOOK TEXT","score":94,"emotion":"disbelief","reasoning":"why someone MUST share this","tags":["Tag1","Tag2"],"scoreboard":"","players":""}]}
 
