@@ -161,18 +161,9 @@ async function main() {
     const preSearchedUrls = await searchYouTubeApi(rosterChannels, args.minDuration, args.total);
 
     if (preSearchedUrls && preSearchedUrls.length > 0) {
-      // If no residential proxy is configured, Oracle Cloud IPs are blocked by YouTube.
-      // Skip oracle-proxy download and return YouTube URLs directly for local yt-dlp
-      // (with bgutil on GitHub Actions) to handle — this saves 15-20 min of wasted time.
-      if (!proxies.trim()) {
-        process.stderr.write(
-          `No YTDLP_PROXIES set — Oracle VM IP is blocked by YouTube without a residential proxy.\n` +
-          `Returning YouTube URLs directly for local yt-dlp (with bgutil) to download.\n`,
-        );
-        writeDirectUrls(preSearchedUrls, args);
-        return;
-      }
-      process.stderr.write(`Using YouTube API results — Oracle VM will download only.\n`);
+      // Oracle VM now has the Mac residential proxy via SSH reverse tunnel (socks5h://127.0.0.1:9100)
+      // configured internally — always route through oracle-proxy regardless of YTDLP_PROXIES.
+      process.stderr.write(`Using YouTube API results — Oracle VM will download via Mac tunnel proxy.\n`);
       postBody = {
         urls: preSearchedUrls,
         minDuration: args.minDuration,
