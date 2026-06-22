@@ -116,7 +116,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       const fileName = `${safeTitle}.mp4`;
       const outPath = join(fileDir, fileName);
 
-      const tryDownload = (useProxy) => new Promise((resolve, reject) => {
+      const tryDownload = (useCookies) => new Promise((resolve, reject) => {
         const args = [
           "--no-check-certificate",
           "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best",
@@ -124,10 +124,12 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           "-o", outPath,
           "--no-playlist",
           "--extractor-args", "youtube:player_client=ios,android,web",
-          "--retries", "2",
+          "--retries", "3",
         ];
-        if (cookiesPath) args.push("--cookies", cookiesPath);
-        if (useProxy && proxyUrl) args.push("--proxy", proxyUrl);
+        // Proxy is required — Oracle VM datacenter IP gets bot-blocked without it
+        if (proxyUrl) args.push("--proxy", proxyUrl);
+        // Cookies: only pass when explicitly requested; expired cookies trigger bot-detection
+        if (useCookies && cookiesPath) args.push("--cookies", cookiesPath);
         args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 300000 });
         let stderr = "";
@@ -137,17 +139,14 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       });
 
       try {
-        // Try with proxy first (residential IP avoids geo-blocks), then without
-        if (proxyUrl) {
-          try {
-            await tryDownload(true);
-          } catch (proxyErr) {
-            console.error(`[oracle-proxy] proxy download failed for ${video.title.slice(0, 50)}: ${proxyErr.message.slice(0, 150)}`);
-            console.log(`[oracle-proxy] retrying without proxy...`);
-            await tryDownload(false);
-          }
-        } else {
+        // First attempt: proxy only, no cookies (residential IP + ios client handles public content)
+        // Passing expired cookies causes "Sign in to confirm you're not a bot" even through proxy
+        try {
           await tryDownload(false);
+        } catch (noCookieErr) {
+          // Second attempt: proxy + cookies (for age-restricted or members-only content)
+          console.log(`[oracle-proxy] retrying with cookies: ${video.title.slice(0, 50)}`);
+          await tryDownload(true);
         }
 
         const downloadUrl = `${PUBLIC_URL}/files/${jobId}/${encodeURIComponent(fileName)}`;
