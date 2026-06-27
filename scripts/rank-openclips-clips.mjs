@@ -442,8 +442,16 @@ async function main() {
   }
 
   if (!clips.length) {
-    process.stderr.write("No unsent clips available after deduplication.\n");
-    process.exit(1);
+    process.stderr.write("Pool exhausted — all available clips have already been posted. Nothing to schedule this run.\n");
+    const json = "[]";
+    if (args.output) {
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(args.output, json);
+      process.stderr.write(`Wrote empty clip list to ${args.output}\n`);
+    } else {
+      process.stdout.write(json + "\n");
+    }
+    process.exit(0);
   }
 
   const scored = clips

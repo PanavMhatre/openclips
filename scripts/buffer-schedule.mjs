@@ -402,8 +402,8 @@ async function main() {
   }
 
   if (!Array.isArray(clips) || !clips.length) {
-    process.stderr.write("Error: clips input must be a non-empty JSON array.\n");
-    process.exit(1);
+    process.stderr.write("No clips to schedule this run — pool is empty or exhausted.\n");
+    process.exit(0);
   }
 
   // Use all clips passed in — rank script already limited the count to the desired number.
