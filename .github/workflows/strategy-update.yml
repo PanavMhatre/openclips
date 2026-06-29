@@ -1,0 +1,25 @@
+name: Strategy Brief Update
+
+on:
+  schedule:
+    # Daily at 07:47 UTC — before the 10:00 publish run, fresh data ready
+    - cron: '47 7 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  update-brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run strategy analysis
+        env:
+          ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/update-strategy-brief.py
