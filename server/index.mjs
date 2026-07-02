@@ -88,8 +88,8 @@ const IS_PROD = process.env.NODE_ENV === "production";
 
 const DESIGN_WIDTH = 1080;
 const DESIGN_HEIGHT = 1920;
-const VIDEO_WIDTH = Math.max(360, Number(process.env.OPENCLIPS_RENDER_WIDTH || 720));
-const VIDEO_HEIGHT = Math.max(640, Number(process.env.OPENCLIPS_RENDER_HEIGHT || 1280));
+const VIDEO_WIDTH = Math.max(360, Number(process.env.OPENCLIPS_RENDER_WIDTH || 1080));
+const VIDEO_HEIGHT = Math.max(640, Number(process.env.OPENCLIPS_RENDER_HEIGHT || 1920));
 const evenRenderValue = (value) => Math.round(Number(value || 0) / 2) * 2;
 const VIDEO_SCALE_X = VIDEO_WIDTH / DESIGN_WIDTH;
 const VIDEO_SCALE_Y = VIDEO_HEIGHT / DESIGN_HEIGHT;
@@ -127,6 +127,18 @@ const SPEAKER_FOCUS_MIN_MOUTH_MOTION = Math.max(0.001, Math.min(0.3, Number(proc
 const SPEAKER_PAN_TRANSITION_SECONDS = Math.max(0.18, Math.min(1.2, Number(process.env.OPENCLIPS_SPEAKER_PAN_TRANSITION_SECONDS || 0.42)));
 const OPUS_GREEN = "#69ff3d";
 const CAPTION_YELLOW = "#fff200";
+// Shared x264/AAC quality settings for every ffmpeg encode pass in this file
+// (final clip render + the source-segment re-encode fallback) — keep both in
+// sync by editing here rather than each call site.
+const X264_QUALITY_ARGS = ["-preset", "slow", "-crf", "18", "-profile:v", "high", "-level", "4.2"];
+const AAC_AUDIO_ARGS = ["-c:a", "aac", "-b:a", "192k"];
+// The clip-planning prompt tells the model "a clip that scores below 72
+// should be replaced" — this is what actually enforces that floor. Only
+// applied to LLM-scored candidates (planClips' main + retry paths), never to
+// localClipPlan's heuristic fallback, which exists specifically for when the
+// LLM path is unavailable and has no comparable scoring signal to hold to
+// the same bar.
+const MIN_CLIP_SCORE = 72;
 
 let activeRenderJobs = 0;
 const renderQueue = [];
@@ -2140,11 +2152,12 @@ YOUR GOAL: stop the scroll in 0.5 seconds. Make them feel like they just got lea
 
 HOOK — the single most important line. Gets 0.5 seconds of attention:
 - 4-8 words, ALL CAPS, zero filler
+- FIRST WORD must be the real name (person, company, institution) OR a charged action verb — never "The", "A", "An", "This", "That"
 - Name the REAL person or company — "SAM ALTMAN", "ELON", "NVIDIA", "THE FED" — never "a CEO" or "an expert"
-- Frame it as a confession, leak, or betrayal: "JUST ADMITTED", "THEY LIED", "FINALLY EXPOSED", "IS SECRETLY DOING THIS", "WILL DESTROY YOUR SAVINGS", "NOBODY WARNED YOU"
+- Frame it as a confession, leak, or betrayal: "JUST ADMITTED", "THEY LIED", "FINALLY EXPOSED", "IS SECRETLY DOING THIS", "WILL DESTROY YOUR SAVINGS", "NOBODY WARNED YOU", "JUST CHANGED EVERYTHING"
 - The hook must create a KNOWLEDGE GAP — the viewer doesn't know what comes after it and NEEDS to
-- FIRE: "SAM ALTMAN JUST ADMITTED THIS", "ELON LIED ABOUT THESE NUMBERS", "THE FED IS LYING TO YOU", "NVIDIA IS SECRETLY DOING THIS", "THEY DESTROYED YOUR 401K ON PURPOSE", "WARREN BUFFETT JUST QUIETLY SOLD", "APPLE KNOWS IT'S LOSING"
-- DEAD: "Big News", "Market Update", "AI Thoughts", "Interesting Take", "Important Info"
+- FIRE: "SAM ALTMAN JUST ADMITTED THIS", "ELON LIED ABOUT THESE NUMBERS", "THE FED IS LYING TO YOU", "NVIDIA IS SECRETLY DOING THIS", "THEY DESTROYED YOUR 401K ON PURPOSE", "WARREN BUFFETT JUST QUIETLY SOLD", "APPLE KNOWS IT'S LOSING", "OPENAI JUST CHANGED EVERYTHING"
+- DEAD: "Big News", "Market Update", "AI Thoughts", "Interesting Take", "Important Info", "The Part About", "This Changed Things"
 
 BODY — 3-4 sentences, 260-520 characters. This is what earns the follow:
 - Sentence 1: NAME dropped immediately + the specific shocking claim or number. Sound like a journalist with a source, not a podcast recap.
@@ -2854,7 +2867,7 @@ async function downloadVideo(sourceUrl, projectId) {
     "--no-playlist",
     "--force-overwrites",
     "-f",
-    "bv*[ext=mp4][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/best[height<=720]/best",
+    "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/best[height<=1080]/best",
     "--merge-output-format",
     "mp4",
     "-o",
@@ -3202,6 +3215,11 @@ function cleanPodcastContext(context = {}) {
     .trim()
     .slice(0, 120);
 
+  // Real "Team A vs Team B" names when known (sports only) — kept separate
+  // from `channel`, which for sports is often the raw broadcaster name
+  // (ESPN, NBA, UFC) and must never be mistaken for an actual team name.
+  const teams = String(context.teams || "").replace(/\s+/g, " ").trim().slice(0, 60);
+
   const combined = `${channel} ${guest} ${topic} ${contextLine} ${hookAngle}`.toLowerCase();
   if (combined.includes("airbnb") && /\b(ai|consumer products|travelers|hosts|guests)\b/i.test(combined)) {
     topic = "AI scale as Airbnb's consumer moat";
@@ -3209,7 +3227,7 @@ function cleanPodcastContext(context = {}) {
     hookAngle = "Airbnb's huge travel network could make AI more useful than a generic chatbot.";
   }
 
-  return { channel, guest, topic, contextLine, hookAngle };
+  return { channel, guest, topic, contextLine, hookAngle, teams };
 }
 
 function podcastContextForPrompt(project) {
@@ -3261,10 +3279,10 @@ RETURN EXACTLY 8 CLIPS. Scan the full transcript including the middle and end se
 
 FIELD RULES:
 - "title": 5-9 words describing the LESSON, not the topic. "Why Investors Get Burned Every Time" beats "Revenue and Growth".
-- "hook": 4-8 UPPERCASE words on screen. This is the scroll-stopper — name the REAL person or company, create an instant knowledge gap. Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, IS OVER, WILL DESTROY, GOT CAUGHT, FINALLY BROKE, QUIETLY SOLD.
-  FIRE Finance/Tech: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "APPLE KNOWS IT'S LOSING" | "THEY DESTROYED YOUR 401K" | "WARREN BUFFETT QUIETLY SOLD"
+- "hook": 4-8 UPPERCASE words on screen. RULE: the FIRST WORD must be the real name (person, company, institution) OR a charged action verb. Never start with "The", "A", "An", "This", "That", "How", "Why". Create an instant knowledge gap — the viewer must feel they're about to learn something they weren't supposed to know. Words that stop scrolls: ADMITTED, LIED, EXPOSED, SECRETLY, NOBODY TOLD YOU, THEY HID THIS, IS OVER, WILL DESTROY, GOT CAUGHT, FINALLY BROKE, QUIETLY SOLD, JUST CHANGED.
+  FIRE Finance/Tech: "SAM ALTMAN JUST ADMITTED THIS" | "ELON LIED ABOUT THESE NUMBERS" | "THE FED IS LYING TO YOU" | "NVIDIA IS SECRETLY DOING THIS" | "APPLE KNOWS IT'S LOSING" | "THEY DESTROYED YOUR 401K" | "WARREN BUFFETT QUIETLY SOLD" | "OPENAI JUST CHANGED EVERYTHING" | "CHINA QUIETLY BUILT THIS"
   FIRE Sports: name the player AND the exact moment/stat — "MCILROY BLEW A 6-SHOT LEAD" | "SPAIN SCORES IN 2 MINUTES" | "49-FOOT PUTT AT SHINNECOCK WINS IT" | "HOW A 6-SHOT LEAD COLLAPSES" | "WORLD CUP COMEBACK NOBODY SAW" | "SCHEFFLER BIRDIES LAST THREE HOLES" | "LEBRON BUZZER BEATER ENDS IT" | "CURRY BREAKS THE ALL-TIME RECORD"
-  DEAD: "Nice Shot" | "Big Moment" | "You Won't Believe" | "Great Play" | "Podcast Moment" | "AI Update" | "Market Thoughts" | "Big News" | "Interesting Insight" | "Revenue Performance"
+  DEAD: "Nice Shot" | "Big Moment" | "You Won't Believe" | "Great Play" | "Podcast Moment" | "AI Update" | "Market Thoughts" | "Big News" | "Interesting Insight" | "Revenue Performance" | "The Part About" | "This Is Interesting" | "A Big Claim"
 - "focus": 2-3 sentences, social caption body. WHO said WHAT, the exact mechanism or number, and WHY the viewer should care. Must add NEW information vs the hook — zero repeated phrases.
 - "score": 0-100 virality score. Be honest. A clip that scores below 72 should be replaced.
 - "emotion": the primary emotion this triggers (shock | disbelief | fear | validation | curiosity | anger)
@@ -3325,7 +3343,18 @@ ${transcript}`;
   mergeNormalized(kimiResult, "NVIDIA Kimi K2.6");
 
   if (allCandidates.length > 0) {
-    return allCandidates.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 8);
+    const sorted = allCandidates.sort((a, b) => (b.score || 0) - (a.score || 0));
+    const qualified = sorted.filter((c) => (c.score || 0) >= MIN_CLIP_SCORE);
+    if (qualified.length > 0) {
+      if (qualified.length < sorted.length) {
+        process.stderr.write(`[planClips] Dropped ${sorted.length - qualified.length} candidate(s) below the ${MIN_CLIP_SCORE} quality floor (${qualified.length} remain)\n`);
+      }
+      return qualified.slice(0, 8);
+    }
+    // Every candidate scored below the floor — better to ship the least-bad
+    // options than produce nothing for this source video.
+    process.stderr.write(`[planClips] No candidates met the ${MIN_CLIP_SCORE} floor — using best-available instead\n`);
+    return sorted.slice(0, 8);
   }
 
   // Fallback chain
@@ -3344,7 +3373,10 @@ async function retryPlanClipsWithoutJsonMode(prompt, duration, analysisChunks, p
   const raw = response.choices?.[0]?.message?.content || "";
   const parsed = JSON.parse(cleanJson(raw));
   const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
-  return clips.map((clip, index) => normalizeCandidate(clip, index, duration, analysisChunks, project)).filter(Boolean).slice(0, 8);
+  const normalized = clips.map((clip, index) => normalizeCandidate(clip, index, duration, analysisChunks, project)).filter(Boolean);
+  const sorted = normalized.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const qualified = sorted.filter((c) => (c.score || 0) >= MIN_CLIP_SCORE);
+  return (qualified.length > 0 ? qualified : sorted).slice(0, 8);
 }
 
 function localClipPlan(segments, duration, project) {
@@ -3608,12 +3640,18 @@ function cleanClipFocus(value, { title = "", context = {}, text = "" } = {}) {
 function polishPodcastHook(value, { title = "", focus = "", context = {}, text = "" } = {}) {
   const raw = cleanHookText(value);
   const cleanedTitle = cleanHookText(title);
+  const angleHook = cleanHookText(context.hookAngle || "");
+  // Priority: AI-generated hook → title → hookAngle (AI scroll-stopper angle) → lesson fallback
   const hook = !isWeakHook(raw)
     ? raw
     : !isWeakHook(cleanedTitle)
       ? cleanedTitle
-      : lessonHookFromParts({ title, focus, context, text });
-  return trimHookWords(hook || lessonHookFromParts({ title, focus, context, text }), 8);
+      : !isWeakHook(angleHook)
+        ? angleHook
+        : lessonHookFromParts({ title, focus, context, text });
+  const result = trimHookWords(hook || lessonHookFromParts({ title, focus, context, text }), 8);
+  // Final safety net: if somehow a weak hook slipped through, replace with absolute fallback
+  return isWeakHook(result) ? "Hidden Truth Finally Exposed" : result;
 }
 
 function hookForOverlay({ hook, title, focus, sourceContext, segments }) {
@@ -3637,14 +3675,32 @@ function cleanHookText(value) {
 function isWeakHook(value) {
   const text = cleanHookText(value);
   const words = text.split(/\s+/).filter(Boolean);
-  if (words.length < 3 || words.length > 10) return true;
+  // Max matches trimHookWords(_, 8) below — every caller that accepts a hook
+  // here immediately trims it to 8 words, so a longer hook that passes this
+  // check would get silently chopped afterward, risking a dropped payoff
+  // word (e.g. "...THE ENTIRE AI BUBBLE IS" instead of "...IS FAKE"). Reject
+  // it here instead so the caller falls through to a shorter alternative.
+  if (words.length < 3 || words.length > 8) return true;
   const lower = text.toLowerCase();
+  // Generic structure rejections
   if (/^(this|the|a|an)\s+(moment|part|clip|scene|episode|segment)\b/.test(lower)) return true;
-  if (/\b(welcome back|watching the|every night worldwide|revenue performance|big concerns|gets good|standalone moment|podcast moment|short form|great clip|best clip|highlight reel|key moment|important topic)\b/.test(lower)) return true;
-  // Hooks that are just descriptive labels with no tension/claim
+  if (/^(a|an)\s+(interesting|great|good|important|amazing|incredible|fascinating|notable|significant|key|relevant|compelling)\b/i.test(lower)) return true;
+  if (/^the part nobody\b/i.test(lower)) return true;
+  if (/^nobody (told|saw|warned) (you about this|this coming)$/i.test(lower)) return true;
+  if (/^nobody told you about\s+this$/i.test(lower)) return true;
+  if (/^(they don't want|they don't want you|they do not want)\b/i.test(lower)) return true;
+  if (/^(this is how|this is what|this is why)\b/i.test(lower) && words.length <= 5) return true;
+  if (/^(this market is|this changed)\b/i.test(lower)) return true;
+  if (/^someone will pay\b/i.test(lower)) return true;
+  // Filler / label phrases
+  if (/\b(welcome back|watching the|every night worldwide|revenue performance|big concerns|gets good|standalone moment|podcast moment|short form|great clip|best clip|highlight reel|key moment|important topic|interesting insight|market update|market thoughts|big news|ai update|ai thoughts)\b/.test(lower)) return true;
+  // Pure category labels with no tension
   if (/^(ai and|tech and|podcast|money and|finance and|sports and)\b/i.test(lower)) return true;
-  if (/^(\d+\s+\w+)$/.test(text)) return true; // bare stats like "100 million travelers"
-  if (/^\$?\d/.test(text) && !/\b(ai|stars|skills|why|how|changes|cost|risk|advantage|moat|math|broken|scale|lesson|beats|doubles|exposed|wrong|mistake|lie|lied|foot|yard|meter|shot|putt|goal|point|second|minute|inning|stroke|birdie|eagle|hole)\b/i.test(text)) return true;
+  // Bare numbers with no action/context
+  if (/^(\d+\s+\w+)$/.test(text)) return true;
+  if (/^\$?\d/.test(text) && !/\b(ai|stars|skills|why|how|changes|cost|risk|advantage|moat|math|broken|scale|lesson|beats|doubles|exposed|wrong|mistake|lie|lied|lost|made|raised|admits|admitted|foot|yard|meter|shot|putt|goal|point|second|minute|inning|stroke|birdie|eagle|hole)\b/i.test(text)) return true;
+  // Starts with vague pronoun — no name = no hook
+  if (/^(it's|its|it is|they're|they are|he's|he is|she's|she is)\b/i.test(lower) && !/\b(apple|google|meta|openai|nvidia|tesla|amazon|microsoft|fed|china|trump|elon|altman|buffett|zuckerberg|huang|cook|bezos|powell)\b/i.test(lower)) return true;
   return false;
 }
 
@@ -3655,77 +3711,182 @@ function isWeakClipLabel(value) {
   return /\b(welcome back|watching|every night|performance|big concerns|gets good|standalone clip)\b/i.test(text);
 }
 
+// Ordered rule table for lessonHookFromParts — first matching rule wins, same
+// as the if-chain it replaces. Each rule gets a shared `facts` snapshot
+// ({ lower, subject, numLabel, keyword }) so adding a new topic is one array
+// entry instead of a copy-pasted if-block, and priority is just array order.
+const HOOK_TEMPLATE_RULES = [
+  // Specific topic overrides (most precise patterns first, fixed strings)
+  {
+    test: (f) => /(airbnb|travelers|hosts|guests|consumer products).*(ai|scale)|ai.*(airbnb|travelers|hosts|guests|scale)/i.test(f.lower),
+    build: () => "Airbnb's AI Advantage Is Scale",
+  },
+  {
+    test: (f) => /(tesla|robotaxi|full self-driving|valuation[^.]{0,80}tesla|tesla[^.]{0,80}valuation)/i.test(f.lower),
+    build: () => "Tesla's Math Doesn't Work",
+  },
+  {
+    test: (f) => /(deepseek|silicon valley|cold war)/i.test(f.lower),
+    build: () => "DeepSeek Exposed America's Blind Spot",
+  },
+  {
+    test: (f) => /(sovereign wealth|\bcanada(?:'s)?\b)/i.test(f.lower) && /\bfund\b/i.test(f.lower),
+    build: () => "Canada's Fund Has A Hidden Catch",
+  },
+  {
+    test: (f) => /(engineering fundamentals|typescript|programming language).*skill|skill.*programming/i.test(f.lower),
+    build: () => "AI Can't Replace This Skill",
+  },
+  {
+    test: (f) => /(descript|slop|creator|editor)/i.test(f.lower) && /\bai\b/i.test(f.lower),
+    build: () => "Creators Are Rejecting AI Slop",
+  },
+  {
+    test: (f) => /(bronze age|human evolution|ancient dna|genetics)/i.test(f.lower),
+    build: () => "Ancient DNA Changed Everything",
+  },
+
+  // Sports fallbacks — fire when a PODCAST clip's transcript is about a game,
+  // match, or athlete (e.g. sports-talk shows), ahead of the generic
+  // action-based rules below so "collapse"/"record" get sports phrasing
+  // instead of finance phrasing. The dedicated highlight-reel pipeline uses
+  // specifySportsHook() instead and never reaches this table.
+  {
+    test: (f) => /(golf|putt|birdie|eagle|bogey|pga|open|masters|ryder|shinnecock|fairway|green|pin|chip)/i.test(f.lower),
+    build: (f) => (f.subject !== "This" ? `${possessive(f.subject)} Lead Just Collapsed` : "The Final Round Collapse"),
+  },
+  {
+    test: (f) => /(world cup|premier league|champions league|la liga|fifa|bundesliga|serie a)/i.test(f.lower),
+    build: () => "That Goal Changed The Match",
+  },
+  {
+    test: (f) => /(goal|soccer|football|penalty|free kick|offside|assist)/i.test(f.lower),
+    build: (f) => (f.subject !== "This" ? `${possessive(f.subject)} Goal Nobody Saw Coming` : "A Goal Nobody Saw Coming"),
+  },
+  {
+    test: (f) => /(nba|basketball|buzzer|game winner|overtime|dunk|three pointer|lebron|curry|durant|jayson|giannis)/i.test(f.lower),
+    build: (f) => (f.subject !== "This" ? `${possessive(f.subject)} Clutch Moment Changes Everything` : "A Clutch Moment Changes Everything"),
+  },
+  {
+    test: (f) => /(nfl|touchdown|quarterback|blitz|interception|mahomes|brady|hurts|allen|lamar)/i.test(f.lower),
+    build: (f) => (f.subject !== "This" ? `${possessive(f.subject)} Play Nobody Saw Coming` : "A Play Nobody Saw Coming"),
+  },
+  {
+    test: (f) => /(comeback|lead.*collapse|blew.*lead|lead.*blew|momentum|shift|turning point)/i.test(f.lower),
+    build: () => "How A Lead Completely Collapsed",
+  },
+  {
+    test: (f) => /(record|historic|first time|never before|all.?time|milestone)/i.test(f.lower),
+    build: (f) => (f.subject !== "This" ? `${possessive(f.subject)} Historic Moment Explained` : "A Historic Moment Explained"),
+  },
+
+  // Action-based dynamic patterns — work for ANY topic
+  {
+    test: (f) => /(admitted|confessed|revealed|just said)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => (f.numLabel
+      ? trimHookWords(`${f.subject} Admitted To ${f.numLabel}`, 7)
+      : trimHookWords(`${f.subject} Just Admitted This`, 5)),
+  },
+  {
+    test: (f) => /(lied|lying|mislead|false claim|fabricat)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Lied About This`, 5),
+  },
+  {
+    test: (f) => /(secretly|quietly|behind the scenes|without telling)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Is Secretly Doing This`, 6),
+  },
+  {
+    test: (f) => /(exposed|caught|found out|cover.?up)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Just Got Exposed`, 5),
+  },
+  {
+    test: (f) => /(fired|quit|resigned|left the company)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Just Got Fired`, 5),
+  },
+  {
+    test: (f) => /(banned|blocked|removed|shut down)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Just Got Banned`, 5),
+  },
+  {
+    test: (f) => /(collapse|collapsing|crash|crisis|bubble)/i.test(f.lower),
+    build: (f) => (f.subject !== "This"
+      ? trimHookWords(`${f.subject} Is About To Collapse`, 6)
+      : "Markets Are About To Break"),
+  },
+  {
+    test: (f) => /(mistake|failed|wrong|biggest error)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => (f.numLabel
+      ? trimHookWords(`${possessive(f.subject)} ${f.numLabel} Mistake`, 5)
+      : trimHookWords(`${possessive(f.subject)} Biggest Mistake Exposed`, 5)),
+  },
+  {
+    test: (f) => /(inflation|central bank|rates|labor market)/i.test(f.lower),
+    build: () => "Inflation Just Changed The Rules",
+  },
+  {
+    test: (f) => /(stimulus|federal spending|taxpayer)/i.test(f.lower),
+    build: (f) => (f.subject !== "This"
+      ? trimHookWords(`${f.subject} Will Pay For This`, 6)
+      : "The Bill Is Coming Due"),
+  },
+  {
+    test: (f) => /(anthropic|revenue|demand|supply)/i.test(f.lower) && f.subject !== "This",
+    build: (f) => trimHookWords(`${possessive(f.subject)} Bottleneck Nobody Talks About`, 6),
+  },
+  {
+    test: (f) => /(secret|hidden|nobody|don't tell|won't tell)/i.test(f.lower),
+    build: (f) => (f.subject !== "This"
+      ? trimHookWords(`${f.subject} Doesn't Want You Knowing This`, 7)
+      : "What They're Hiding From You"),
+  },
+  {
+    test: (f) => /(compound|wealth|retire|passive income)/i.test(f.lower),
+    build: (f) => (f.subject !== "This"
+      ? trimHookWords(`${f.subject} Revealed The Wealth Secret`, 6)
+      : "Real Wealth Doesn't Work That Way"),
+  },
+
+  // Dynamic fallback: use extracted number + subject for specificity
+  {
+    test: (f) => Boolean(f.numLabel) && f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Just Changed With ${f.numLabel}`, 7),
+  },
+  {
+    test: (f) => Boolean(f.numLabel),
+    build: (f) => trimHookWords(`The ${f.numLabel} Number Nobody Talks About`, 6),
+  },
+
+  // Generic fallback with subject when possible
+  {
+    test: (f) => f.subject !== "This" && Boolean(f.keyword),
+    build: (f) => trimHookWords(`${possessive(f.subject)} ${f.keyword} Changes Everything`, 6),
+  },
+  {
+    test: (f) => f.subject !== "This",
+    build: (f) => trimHookWords(`${f.subject} Is Hiding Something Big`, 6),
+  },
+  {
+    test: () => true,
+    build: () => "Hidden Truth Finally Exposed",
+  },
+];
+
 function lessonHookFromParts({ title = "", focus = "", context = {}, text = "" } = {}) {
   const subject = subjectFromContext(context, title, text);
   const lower = `${title} ${focus} ${context.topic || ""} ${context.hookAngle || ""} ${text}`.toLowerCase();
-  if (/(airbnb|travelers|hosts|guests|consumer products).*(ai|scale)|ai.*(airbnb|travelers|hosts|guests|scale)/i.test(lower)) {
-    return "Airbnb's AI Advantage Is Scale";
-  }
-  if (/(anthropic|revenue|demand|supply)/i.test(lower)) {
-    return `${possessive(subject)} Bottleneck Nobody Talks About`;
-  }
-  if (/(tesla|p\/?e|340|payback|robotaxi|full self-driving|valuation[^.]{0,80}tesla|tesla[^.]{0,80}valuation)/i.test(lower)) {
-    return "Tesla's Math Doesn't Work";
-  }
-  if (/(inflation|central bank|rates|labor market)/i.test(lower)) {
-    return "Inflation Just Changed The Rules";
-  }
-  if (/(sovereign wealth|\bcanada(?:'s)?\b|\bfund\b)/i.test(lower)) {
-    return "Canada's Fund Has A Hidden Catch";
-  }
-  if (/(deepseek|silicon valley|wall street|cold war)/i.test(lower)) {
-    return "DeepSeek Exposed America's Blind Spot";
-  }
-  if (/(engineering fundamentals|skills|typescript|programming)/i.test(lower)) {
-    return "AI Can't Replace This Skill";
-  }
-  if (/(descript|slop|creator|editor)/i.test(lower)) {
-    return "Creators Are Rejecting AI Slop";
-  }
-  if (/(bronze age|human evolution|ancient dna|genetics)/i.test(lower)) {
-    return "This Changed Human DNA Forever";
-  }
-  if (/(stimulus|trump|federal spending|taxpayer)/i.test(lower)) {
-    return "Someone Will Pay For This";
-  }
-  if (/(mistake|failed|wrong|misunderstood|nobody knows)/i.test(lower)) {
-    return `${possessive(subject)} Biggest Mistake Exposed`;
-  }
-  if (/(secret|hidden|nobody|don't tell|they won't)/i.test(lower)) {
-    return "They Don't Want You Knowing This";
-  }
-  if (/(compound|wealth|retire|passive|income)/i.test(lower)) {
-    return "This Is How Real Wealth Compounds";
-  }
-  if (/(crash|collapse|bubble|crisis)/i.test(lower)) {
-    return "This Market Is About To Break";
-  }
-  // Sports fallbacks — fire when transcript is about a game, match, or athlete
-  if (/(golf|putt|birdie|eagle|bogey|pga|open|masters|ryder|shinnecock|fairway|green|pin|chip)/i.test(lower)) {
-    return `${possessive(subject)} Lead Just Collapsed`;
-  }
-  if (/(world cup|premier league|champions league|la liga|fifa|bundesliga|serie a)/i.test(lower)) {
-    return "This Goal Changed The Match";
-  }
-  if (/(goal|soccer|football|penalty|free kick|offside|assist)/i.test(lower)) {
-    return `${possessive(subject)} Goal Nobody Saw Coming`;
-  }
-  if (/(nba|basketball|buzzer|game winner|overtime|dunk|three pointer|lebron|curry|durant|jayson|giannis)/i.test(lower)) {
-    return `${possessive(subject)} Clutch Moment Changes Everything`;
-  }
-  if (/(nfl|touchdown|quarterback|blitz|interception|mahomes|brady|hurts|allen|lamar)/i.test(lower)) {
-    return `${possessive(subject)} Play Nobody Saw Coming`;
-  }
-  if (/(comeback|lead.*collapse|blew.*lead|lead.*blew|momentum|shift|turning point)/i.test(lower)) {
-    return "How This Lead Completely Collapsed";
-  }
-  if (/(record|historic|first time|never before|all.?time|milestone)/i.test(lower)) {
-    return `${possessive(subject)} Historic Moment Explained`;
-  }
+
+  // Highest priority: use hookAngle directly — it's an AI-curated scroll-stopper per clip
+  const angle = cleanHookText(context.hookAngle || "");
+  if (angle && !isWeakHook(angle)) return trimHookWords(angle, 8);
+
+  // Extract a dollar/percentage figure from focus for specificity
+  const numMatch = (focus || text).match(/\$?\d+(?:\.\d+)?(?:\s*(?:B|M|T|K|%|billion|million|trillion|percent|x))(?=\W|$)/i);
+  const numLabel = numMatch ? numMatch[0].replace(/\s+/g, "").toUpperCase() : "";
   const keyword = lessonKeyword(lower, context);
-  if (subject && keyword) return `${possessive(subject)} ${keyword} Changes Everything`;
-  if (subject) return `Nobody Told You About ${subject}`;
-  return "The Part Nobody Talks About";
+
+  const facts = { lower, subject, numLabel, keyword };
+  const rule = HOOK_TEMPLATE_RULES.find((candidate) => candidate.test(facts));
+  return rule.build(facts);
 }
 
 function titleFromFocus(focus, context = {}, text = "") {
@@ -3734,26 +3895,73 @@ function titleFromFocus(focus, context = {}, text = "") {
 }
 
 function subjectFromContext(context = {}, title = "", text = "") {
-  const combined = `${title} ${context.contextLine || ""} ${context.topic || ""} ${context.guest || ""} ${context.channel || ""} ${text}`;
+  const combined = `${title} ${context.contextLine || ""} ${context.topic || ""} ${context.hookAngle || ""} ${context.guest || ""} ${context.channel || ""} ${text}`;
+  // Expanded known entities — check most specific first
   const known = [
-    // Finance/Tech
-    "Airbnb", "Tesla", "Anthropic", "DeepSeek", "Descript", "Canada", "Trump", "Inflation", "AI",
-    // Golf
+    // People
+    "Sam Altman", "Elon Musk", "Elon", "Warren Buffett", "Mark Zuckerberg", "Jeff Bezos",
+    "Tim Cook", "Jensen Huang", "Satya Nadella", "Larry Fink", "Jamie Dimon", "Jerome Powell",
+    "Janet Yellen", "Trump", "Biden", "Obama",
+    // Companies / AI
+    "OpenAI", "Anthropic", "DeepSeek", "Mistral", "Perplexity", "Groq",
+    "Nvidia", "Apple", "Google", "Meta", "Microsoft", "Amazon", "Tesla", "SpaceX",
+    "Airbnb", "Uber", "Lyft", "TikTok", "ByteDance", "Palantir", "Stripe",
+    "Descript", "YouTube",
+    // Finance / Macro
+    "The Fed", "Fed", "BlackRock", "SoftBank", "Sequoia", "a16z",
+    "Goldman", "JPMorgan",
+    // Country / institution
+    "China", "Canada", "Japan", "Europe",
+    // Golf — for sports-talk podcast content (the highlight-reel pipeline
+    // uses specifySportsHook() instead and never reaches this list)
     "McIlroy", "Scheffler", "Rory", "Tiger", "Spieth", "Morikawa", "Bryson", "Rahm", "Hovland", "Fleetwood",
     // Soccer / World Cup
     "Messi", "Ronaldo", "Mbappé", "Mbappe", "Haaland", "Vinicius", "Bellingham", "Rodri",
     "Spain", "England", "France", "Argentina", "Brazil", "Germany", "USA", "Portugal",
     // NBA
     "LeBron", "Curry", "Durant", "Giannis", "Luka", "Jayson", "Tatum", "Embiid",
-    // NFL
-    "Mahomes", "Brady", "Hurts", "Allen", "Lamar", "Jackson",
+    // NFL — bare "Jackson" deliberately omitted: too ambiguous against
+    // unrelated finance terms like "Jackson Hole" (the Fed symposium)
+    "Mahomes", "Brady", "Hurts", "Allen", "Lamar",
+    // Generic concepts last
+    "Inflation", "AI",
   ];
-  const found = known.find((item) => new RegExp(`\\b${item}\\b`, "i").test(combined));
+  // Pick whichever entity is actually mentioned most in the source text — not
+  // just the first one to appear in this priority list. With ~45 entries now
+  // (vs. the original 9), it's common for a clip to mention two of them (e.g.
+  // "Nvidia's CEO praised Tesla's robotaxi push"); the entity repeated most is
+  // the far stronger signal for who the clip is actually about. Ties fall
+  // back to this list's priority order.
+  let found = null;
+  let bestScore = -1;
+  known.forEach((item, priority) => {
+    const count = (combined.match(new RegExp(`\\b${item.replace(/\s+/g, "\\s+")}\\b`, "gi")) || []).length;
+    if (!count) return;
+    const score = count * known.length - priority;
+    if (score > bestScore) {
+      bestScore = score;
+      found = item;
+    }
+  });
   if (found) return found;
+  // Fall back to guest last name (most recognizable part)
   const guest = cleanHookText(context.guest || "");
   if (guest) return guest.split(/\s+/).slice(-1)[0];
+  // Fall back to channel name (2 words max)
   const channel = cleanHookText(context.channel || "");
   if (channel) return channel.split(/\s+/).slice(0, 2).join(" ");
+  // Last resort: extract a real proper noun from free-form text — deliberately
+  // excluding `title`. Titles are Title Case ("Why Investors Get Burned Every
+  // Time"), so a capitalized-word match against them mostly grabs generic
+  // headline words, not real entities, and by this point the title has
+  // already been tried (and rejected) as a hook upstream in polishPodcastHook.
+  // contextLine/topic/hookAngle/text are normal prose, where a capitalized
+  // word is a much stronger signal of an actual proper noun.
+  const proseSource = `${context.contextLine || ""} ${context.topic || ""} ${context.hookAngle || ""} ${text}`;
+  const capitalizedWords = proseSource.match(/\b[A-Z][a-z]{2,}\b/g) || [];
+  const genericSubjectWord = /^(this|that|these|those|the|a|an|why|how|what|which|who|when|where|watch|it|its|they|their|nobody|someone|everybody|everyone)$/i;
+  const properNoun = capitalizedWords.find((word) => !genericSubjectWord.test(word));
+  if (properNoun) return properNoun;
   return "This";
 }
 
@@ -3767,11 +3975,11 @@ function lessonKeyword(lower, context = {}) {
   if (/\bscale\b/.test(lower)) return "Scale";
   if (/\btrust\b/.test(lower)) return "Trust";
   if (/\bgrowth\b/.test(lower)) return "Growth";
-  if (/\bmoat|advantage\b/.test(lower)) return "Moat";
-  if (/\brisk|tradeoff|catch\b/.test(lower)) return "Risk";
+  if (/\b(moat|advantage)\b/.test(lower)) return "Moat";
+  if (/\b(risk|tradeoff|catch)\b/.test(lower)) return "Risk";
   if (/\bsupply\b/.test(lower)) return "Supply";
   if (/\bdemand\b/.test(lower)) return "Demand";
-  if (/\bvaluation|price|market\b/.test(lower)) return "Valuation";
+  if (/\b(valuation|price|market)\b/.test(lower)) return "Valuation";
   if (/\bai\b/.test(lower) || /\bai\b/i.test(context.topic || "")) return "AI";
   return "";
 }
@@ -3955,42 +4163,87 @@ function cleanCaptionToken(value) {
  * When generic: rebuild the hook from the contextLine (most dramatic fact) +
  * teams — e.g. "URUGUAY SCORES IN 89TH MINUTE" instead of "THIS IS INSANE".
  */
+// Trim trailing words until the hook is guaranteed to fit the overlay's
+// 3-line budget (createHookOverlay does wrapText(hook, 18).slice(0, 3),
+// which silently drops any line past the 3rd with no ellipsis) — verified a
+// 7-word combined hook like "IVORY COAST DEFENDER SCORES LATE EQUALIZER
+// TONIGHT" wraps to 4 lines and loses its last word this way.
+function fitHookToOverlayLines(hook, maxLines = 3, maxChars = 18) {
+  let words = String(hook || "").trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && wrapText(words.join(" ").toUpperCase(), maxChars).length > maxLines) {
+    words = words.slice(0, -1);
+  }
+  return words.join(" ");
+}
+
 function specifySportsHook(rawHook, sourceContext = {}) {
   const hook = String(rawHook || "").trim();
   const ctx = cleanPodcastContext(sourceContext || {});
-  // channel stores "Team A vs Team B", contextLine stores the dramatic highlight
-  const teams   = String(ctx.channel || "").replace(/\s+vs\.?\s+/i, " VS ").trim();
+  // Real "Team A vs Team B" names only — never the raw broadcaster/channel
+  // name (ESPN, NBA, UFC), which used to leak in here via ctx.channel's own
+  // fallback chain and could get rebuilt into a hook that was just "NBA".
+  const teams   = String(ctx.teams || "").replace(/\s+vs\.?\s+/i, " VS ").trim();
   const context = String(ctx.contextLine || ctx.hookAngle || "").trim();
 
-  // Detect a generic hook: starts with a vague word AND has no mixed-case proper noun
+  // Detect a generic hook: starts with a vague word AND has no proper noun
   const GENERIC_START = /^(nobody|they|this|it|watch|history|the|a|an|what|how|why|incredible|insane|unreal|unbelievable|impossible|you won't|can't believe|wait for)\b/i;
-  // All-caps hook can't be checked for proper nouns via casing — check the raw form instead
+  // The AI always returns sports hooks in ALL CAPS (see prompt below), so a
+  // mixed-case proper-noun check can never fire here — this list of known
+  // names/teams is the only real signal available.
   const rawLower = hook.toLowerCase();
   const hasSpecificName = Boolean(
-    // Proper noun in original (mixed case)
+    // Proper noun in original (mixed case) — kept as a cheap defensive
+    // check in case the hook source ever stops being all-caps.
     /[A-Z][a-z]{2,}/.test(hook) ||
-    // Or known country/team/player pattern in the hook text
-    /(uruguay|belgium|spain|mexico|cape verde|tunisia|japan|iran|saudi|argentina|brazil|france|germany|england|portugal|croatia|netherlands|mbappe|ronaldo|messi|neymar|curry|lebron|lakers|warriors|celtics|heat|bucks|nets|knicks|ufc|conor|khabib|adesanya|lopes|garcia|pereira)/i.test(hook)
+    // Known country/team/player patterns — \b-wrapped so short tokens like
+    // "usa" don't false-positive as substrings of ordinary words
+    // ("causal", "bandcamp").
+    /\b(uruguay|belgium|spain|mexico|cape verde|tunisia|japan|iran|saudi|argentina|brazil|france|germany|england|portugal|croatia|netherlands|italy|colombia|chile|senegal|ghana|morocco|australia|usa|usmnt|uswnt|canada|ecuador|peru|venezuela|paraguay|bolivia|korea|nigeria|ivory coast|cameroon|qatar|turkey|poland|sweden|denmark|norway|switzerland|austria|scotland|wales|czech|slovakia|hungary|ukraine|greece|romania|serbia|russia)\b/i.test(hook) ||
+    // Players — football/soccer
+    /\b(mbappe|ronaldo|messi|neymar|haaland|benzema|salah|mane|lewandowski|de bruyne|modric|kroos|kante|pogba|vinicius|pedri|gavi|bellingham|saka|rashford|sterling|grealish|mount|kane|son|osimhen|eto|dembele|martial|firmino|nunez|jota|coutinho|casemiro|alisson|ederson|oblak|lloris|neuer|ter stegen)\b/i.test(hook) ||
+    // Players — basketball
+    /\b(curry|lebron|durant|giannis|embiid|jokic|tatum|butler|lillard|westbrook|harden|irving|doncic|booker|beal|young|mitchell|fox|ingram|lauri|sabonis|towns|gobert|rudy|holiday|middleton|khris|antetokounmpo)\b/i.test(hook) ||
+    // Teams — NBA
+    /\b(lakers|warriors|celtics|heat|bucks|nets|knicks|sixers|nuggets|suns|clippers|spurs|rockets|mavs|mavericks|thunder|jazz|grizzlies|pelicans|hawks|bulls|pacers|cavaliers|pistons|raptors|magic|wizards|hornets|timberwolves|blazers|kings)\b/i.test(hook) ||
+    // Teams — NFL
+    /\b(patriots|chiefs|bills|ravens|bengals|browns|steelers|titans|colts|texans|jaguars|broncos|raiders|chargers|cowboys|eagles|giants|commanders|bears|lions|packers|vikings|falcons|saints|panthers|buccaneers|cardinals|rams|seahawks|49ers)\b/i.test(hook) ||
+    // MMA / Boxing — bare "dc" deliberately omitted, it false-positives on
+    // "DC United" (MLS) and "Washington DC"
+    /\b(ufc|conor|khabib|adesanya|lopes|garcia|pereira|ngannou|stipe|jones|poirier|mcgregor|chandler|oliveira|gaethje|volkanovski|holloway|topuria|pimblett|dustin|belal|edwards|masvidal|diaz|covington|tyson|fury|usyk|wilder|joshua|canelo|bivol|crawford|spence|benavidez|plant)\b/i.test(hook) ||
+    // Golf — same roster used by subjectFromContext for podcast fallbacks
+    /\b(mcilroy|scheffler|rory|spieth|morikawa|bryson|rahm|hovland|fleetwood|pga|masters|ryder cup|shinnecock|birdie|eagle|bogey)\b/i.test(hook)
   );
 
   const isGeneric = GENERIC_START.test(rawLower.trim()) && !hasSpecificName;
 
-  if (!isGeneric) return hook;  // Already specific — return as-is
+  if (!isGeneric) return fitHookToOverlayLines(hook) || hook;  // Already specific — just guard the length
 
-  // Rebuild from context: use contextLine as the action, teams as the subject
+  // Rebuild from context: ALWAYS lead with the team/subject so the hook is specific
   if (context && teams) {
-    // e.g. "URUGUAY SCORES IN 89TH MINUTE" (contextLine already has the action)
-    const action = context.toUpperCase().split(/\s+/).slice(0, 6).join(" ");
-    return action;
+    // e.g. "URUGUAY SCORES IN 89TH MINUTE" — team first, action second
+    const teamName = teams.split(/\s+VS\.?\s+/i)[0].trim().toUpperCase();
+    const action = context.toUpperCase().split(/\s+/).slice(0, 5).join(" ");
+    // If contextLine already mentions the team, don't double it — check every
+    // word of the team name (not just the first) so multi-word names like
+    // "IVORY COAST" or "CAPE VERDE" are still recognized when the action
+    // leads with their second word ("COAST DEFENDER SCORES LATE"). Word
+    // boundaries matter here too — a short team word like "USA" shouldn't
+    // match as a substring of an unrelated word in the action.
+    const actionWords = new Set(action.split(/\s+/));
+    const actionMentionsTeam = teamName.split(/\s+/).some((word) => actionWords.has(word));
+    const combined = actionMentionsTeam ? action : `${teamName} ${action}`;
+    return fitHookToOverlayLines(combined);
   }
   if (teams) {
-    // e.g. "URUGUAY VS CAPE VERDE" (better than a generic hook)
-    return teams.toUpperCase().split(/\s+/).slice(0, 6).join(" ");
+    // e.g. "URUGUAY VS CAPE VERDE" — better than a generic hook
+    return fitHookToOverlayLines(teams.toUpperCase());
   }
   if (context) {
-    return context.toUpperCase().split(/\s+/).slice(0, 7).join(" ");
+    return fitHookToOverlayLines(context.toUpperCase());
   }
-  return hook;
+  // No team/context signal at all — better a generic-but-non-empty overlay
+  // than falling through to an unfixed generic/empty hook.
+  return fitHookToOverlayLines(hook) || "Best Moments Of The Game";
 }
 
 async function renderClip({
@@ -4088,10 +4341,7 @@ async function renderClip({
     duration.toFixed(3),
     "-c:v",
     "libx264",
-    "-preset",
-    "ultrafast",
-    "-crf",
-    "24",
+    ...X264_QUALITY_ARGS,
     "-pix_fmt",
     "yuv420p",
   );
@@ -4100,7 +4350,7 @@ async function renderClip({
   }
 
   if (hasAudio) {
-    args.push("-c:a", "aac", "-b:a", "128k");
+    args.push(...AAC_AUDIO_ARGS);
   }
 
   // NOTE: +faststart is intentionally omitted here — it causes hangs on macOS with
@@ -4172,9 +4422,9 @@ function buildFilterComplex(layout, overlayItems, options = {}) {
   const mode = String(layout || "auto").toLowerCase();
   let base;
   if (mode === "fill") {
-    base = `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},fps=${RENDER_FPS},setsar=1,format=rgba[base0]`;
+    base = `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},fps=${RENDER_FPS},setsar=1,format=rgba[base0]`;
   } else if (mode === "fit") {
-    base = `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x050505,fps=${RENDER_FPS},setsar=1,format=rgba[base0]`;
+    base = `[0:v]scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x050505,fps=${RENDER_FPS},setsar=1,format=rgba[base0]`;
   } else if (mode === "sports") {
     base = ballFocusFilter(options.focusTrack, options.sourceProbe);
   } else {
@@ -4252,7 +4502,7 @@ function speakerFocusFilter(focusTrack, sourceProbe) {
   return [
     podcastBlurredBackgroundFilter(),
     `[0:v]setpts=PTS-STARTPTS,crop=${geometry.cropW}:${geometry.cropH}:x='${xExpr}':y='${yExpr}',` +
-      `scale=${PODCAST_FRAME_SIZE}:${PODCAST_FRAME_SIZE}:flags=fast_bilinear,setsar=1,format=rgba,` +
+      `scale=${PODCAST_FRAME_SIZE}:${PODCAST_FRAME_SIZE}:flags=lanczos,setsar=1,format=rgba,` +
       "eq=contrast=1.04:saturation=1.08:brightness=-0.01[podcast_fg]",
     podcastFrameCompositeFilter(),
   ].join(";");
@@ -4369,14 +4619,14 @@ function informationFocusFilter(sourceProbe, focusTrack) {
   return [
     podcastBlurredBackgroundFilter(),
     `[0:v]setpts=PTS-STARTPTS,crop=${geometry.cropW}:${geometry.cropH}:${geometry.cropX}:${geometry.cropY},` +
-      `scale=${PODCAST_FRAME_SIZE}:${PODCAST_FRAME_SIZE}:flags=fast_bilinear,setsar=1,format=rgba,` +
+      `scale=${PODCAST_FRAME_SIZE}:${PODCAST_FRAME_SIZE}:flags=lanczos,setsar=1,format=rgba,` +
       "eq=contrast=1.03:saturation=1.04:brightness=-0.01[podcast_fg]",
     podcastFrameCompositeFilter(),
   ].join(";");
 }
 
 function podcastBlurredBackgroundFilter() {
-  return `[0:v]setpts=PTS-STARTPTS,scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase,` +
+  return `[0:v]setpts=PTS-STARTPTS,scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,` +
     `crop=${VIDEO_WIDTH}:${VIDEO_HEIGHT},gblur=sigma=12,` +
     "eq=contrast=0.82:saturation=0.62:brightness=-0.16,format=rgba[podcast_bg]";
 }
@@ -4599,7 +4849,7 @@ function ballFocusFilter(focusTrack, sourceProbe) {
 
   return [
     `[0:v]setpts=PTS-STARTPTS,crop=${cropW}:${cropH}:x='${xExpr}':y='${yExpr}',` +
-      `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=fast_bilinear,fps=${RENDER_FPS},setsar=1,format=rgba,` +
+      `scale=${VIDEO_WIDTH}:${VIDEO_HEIGHT}:flags=lanczos,fps=${RENDER_FPS},setsar=1,format=rgba,` +
       "eq=contrast=1.04:saturation=1.08:brightness=-0.01[base0]",
   ].join(";");
 }
@@ -4931,7 +5181,7 @@ async function generateThumbnail(videoPath, outputPath) {
     "-vframes",
     "1",
     "-vf",
-    "scale=420:-2",
+    `scale=${VIDEO_WIDTH}:-2:flags=lanczos`,
     "-q:v",
     "2",
     outputPath,
@@ -5034,20 +5284,14 @@ async function createSourceSegment({ sourcePath, outputPath, start, duration }) 
       "0:a:0?",
       "-c:v",
       "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "23",
+      ...X264_QUALITY_ARGS,
       "-threads",
       String(FFMPEG_THREADS),
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
+      ...AAC_AUDIO_ARGS,
       "-movflags",
       "+faststart",
       outputPath,
-    ], { timeoutMs: 1000 * 60 * 12 });
+    ], { timeoutMs: 1000 * 60 * 20 }); // preset "slow" at up to 1080p is much slower than the old veryfast/720p fallback — give it more room
   } catch (error) {
     await safeRemoveManagedPath(outputPath);
     throw error;

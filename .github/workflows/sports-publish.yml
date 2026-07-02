@@ -63,6 +63,9 @@ jobs:
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
       OPENCLIPS_MAX_RENDER_JOBS: "2"
       OPENCLIPS_FFMPEG_THREADS: "1"
+      # Filter threads default to 3 if unset — pin to 1 so 2 concurrent
+      # renders can't spin up 8 total threads on this 2-vCPU runner.
+      OPENCLIPS_FFMPEG_FILTER_THREADS: "1"
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
       OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
       YTDLP_PROXIES: ${{ secrets.YTDLP_PROXIES }}
@@ -258,6 +261,7 @@ jobs:
           "
 
       - name: Download clips for enhancement
+        timeout-minutes: 10
         run: |
           node -e "
             const clips = JSON.parse(require('fs').readFileSync('/tmp/oc-top8.json','utf8'));
@@ -275,10 +279,12 @@ jobs:
               pending++;
               const mod = url.startsWith('https') ? https : http;
               const file = fs.createWriteStream(dest);
-              mod.get(url, res => {
+              const req = mod.get(url, { timeout: 30000 }, res => {
                 res.pipe(file);
                 file.on('finish', () => { file.close(); console.log('Downloaded:', path.basename(dest)); pending--; });
-              }).on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
+              });
+              req.on('timeout', () => { req.destroy(new Error('timed out')); });
+              req.on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
             }
             const wait = () => { if (pending > 0) setTimeout(wait, 500); };
             wait();

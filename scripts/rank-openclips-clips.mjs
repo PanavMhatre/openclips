@@ -94,7 +94,10 @@ Example: [3,7,1,0,12,5,9,2]`;
           const indices = JSON.parse(clean.slice(s, e+1));
           if (!Array.isArray(indices) || !indices.length) return resolve(null);
           process.stderr.write(`[ai-ranker] gpt-oss-120b selected indices: ${indices.join(",")}\n`);
-          resolve(indices.map(Number).filter(i => Number.isFinite(i) && i >= 0 && i < candidates.length));
+          // Dedup — an LLM occasionally repeats an index, which would otherwise
+          // schedule the same physical clip to two different publish slots.
+          const cleaned = indices.map(Number).filter(i => Number.isFinite(i) && i >= 0 && i < candidates.length);
+          resolve(cleaned.filter((v, i) => cleaned.indexOf(v) === i));
         } catch { resolve(null); }
       });
     });
@@ -266,6 +269,13 @@ function cleanHook(clip) {
 
 // ── Scoring ──────────────────────────────────────────────────────────────────
 
+// Mirrors the clip-planning prompt in server/index.mjs ("a clip that scores
+// below 72 should be replaced") — this is what actually enforces that floor
+// against the raw AI-assigned clip.score, independent of the _score below
+// (which blends in hook/focus/duration/analytics bonuses unrelated to the
+// AI's own quality judgment).
+const MIN_CLIP_SCORE = 72;
+
 const WEAK_HOOK_PATTERNS = [
   /^\d[\d,. ]*[kmb]?$/i,          // bare number
   /^(clip|part|segment|episode)\s*\d+$/i,
@@ -336,6 +346,29 @@ function scoreClip(clip) {
   const filePenalty = clip._hasFile ? 0 : -25;
   const analytics = analyticsBoost(clip, _signals);
   return Math.max(0, base + hook + focus + duration + filePenalty + analytics);
+}
+
+// The AI ranker's own prompt enforces "no more than 2 clips on the same
+// subject", but the score-sorted fallback below (used whenever the AI
+// ranker is unavailable — missing key, network error, 45s timeout, bad
+// JSON) has no such logic. This lightweight keyword-overlap check gives the
+// fallback path the same guarantee without needing a second LLM call.
+function topicKeywords(clip) {
+  const STOP = new Set(["this","that","these","those","with","from","about","which","their","there","would","could","should"]);
+  return new Set(
+    `${clip.hook || ""} ${clip.title || ""}`
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 4 && !STOP.has(w)),
+  );
+}
+
+function isSameTopic(wordsA, wordsB) {
+  if (!wordsA.size || !wordsB.size) return false;
+  let overlap = 0;
+  for (const w of wordsA) if (wordsB.has(w)) overlap++;
+  return overlap / Math.min(wordsA.size, wordsB.size) >= 0.5;
 }
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -454,7 +487,13 @@ async function main() {
     process.exit(0);
   }
 
-  const scored = clips
+  const qualifiedClips = clips.filter((c) => Number(c.score ?? 72) >= MIN_CLIP_SCORE);
+  if (qualifiedClips.length > 0 && qualifiedClips.length < clips.length) {
+    process.stderr.write(`[rank] Dropped ${clips.length - qualifiedClips.length} clip(s) below the ${MIN_CLIP_SCORE} quality floor (${qualifiedClips.length} remain).\n`);
+  } else if (qualifiedClips.length === 0) {
+    process.stderr.write(`[rank] No clips met the ${MIN_CLIP_SCORE} quality floor — using best-available instead.\n`);
+  }
+  const scored = (qualifiedClips.length > 0 ? qualifiedClips : clips)
     .map((clip) => ({ ...clip, _score: scoreClip(clip) }))
     .sort((a, b) => b._score - a._score);
 
@@ -466,8 +505,20 @@ async function main() {
     top = aiIndices.slice(0, args.top).map(i => candidates[i]);
     process.stderr.write(`[ai-ranker] Using AI selection (${top.length} clips)\n`);
   } else {
-    top = scored.slice(0, args.top);
-    process.stderr.write(`[ai-ranker] Falling back to score-sorted selection\n`);
+    // Score-sorted fallback, but still enforce topic diversity (max 2 clips
+    // per subject) so an unavailable AI ranker can't ship a batch that's
+    // mostly near-duplicate clips about the same story.
+    top = [];
+    const usedTopicCounts = [];
+    for (const clip of scored) {
+      if (top.length >= args.top) break;
+      const words = topicKeywords(clip);
+      const dupeCount = usedTopicCounts.filter((u) => isSameTopic(u, words)).length;
+      if (dupeCount >= 2) continue;
+      top.push(clip);
+      usedTopicCounts.push(words);
+    }
+    process.stderr.write(`[ai-ranker] Falling back to score-sorted selection (topic-deduped, ${top.length}/${args.top})\n`);
   }
 
   process.stderr.write(`Ranked ${clips.length} clip(s). Top ${top.length}:\n`);

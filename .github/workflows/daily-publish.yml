@@ -62,9 +62,13 @@ jobs:
       OPENCLIPS_GROQ_TRANSCRIBE_MODEL: whisper-large-v3-turbo
       # Keep clips local so enhance script can process them
       OPENCLIPS_DELETE_LOCAL_VIDEO_AFTER_CLOUD: "false"
-      # Run 2 ffmpeg renders concurrently (1 thread each) on the 2-vCPU runner
+      # Run 2 ffmpeg renders concurrently (1 encode + 1 filter thread each) on
+      # the 2-vCPU runner. Filter threads default to 3 if unset, which would
+      # let 2 concurrent renders spin up 6 filter threads + 2 encode threads
+      # (8 total) fighting over 2 vCPUs — pin it down to match the budget.
       OPENCLIPS_MAX_RENDER_JOBS: "2"
       OPENCLIPS_FFMPEG_THREADS: "1"
+      OPENCLIPS_FFMPEG_FILTER_THREADS: "1"
       OPENCLIPS_MAX_YTDLP_JOBS: "3"
       # Persist ledger inside data/ so it survives in the GitHub Actions cache
       OPENCLIPS_BUFFER_LEDGER: data/buffer-ledger.json
@@ -271,6 +275,7 @@ jobs:
           "
 
       - name: Download clips for enhancement
+        timeout-minutes: 10
         run: |
           # Clips not present locally (cloud-only) — download from GitHub storage
           node -e "
@@ -289,18 +294,25 @@ jobs:
               pending++;
               const mod = url.startsWith('https') ? https : http;
               const file = fs.createWriteStream(dest);
-              mod.get(url, res => {
+              const req = mod.get(url, { timeout: 30000 }, res => {
                 res.pipe(file);
                 file.on('finish', () => { file.close(); console.log('Downloaded:', path.basename(dest)); pending--; });
-              }).on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
+              });
+              req.on('timeout', () => { req.destroy(new Error('timed out')); });
+              req.on('error', e => { fs.unlink(dest, ()=>{}); console.error('Failed:', path.basename(dest), e.message); pending--; });
             }
-            // Simple wait
+            // Simple wait — bounded by the step-level timeout-minutes above,
+            // which is the real backstop if a download stalls after connecting
+            // (the request-level timeout only catches a stalled/no-response
+            // connection, not a connection that accepts but trickles slowly).
             const wait = () => { if (pending > 0) setTimeout(wait, 500); };
             wait();
           "
 
       - name: Enhance clips with Pixabay images
-        timeout-minutes: 20
+        # Re-encode pass now runs at crf 18/medium (up from crf 22/fast) to match
+        # the main render's quality tier, so it needs more headroom per clip.
+        timeout-minutes: 30
         continue-on-error: true
         run: node scripts/enhance-clips-with-images.mjs --clips=/tmp/oc-top8.json
 
