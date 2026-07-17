@@ -214,6 +214,16 @@ jobs:
             echo "DYNAMIC_ROSTER_READY=false" >> $GITHUB_ENV
             echo "Dynamic roster generation failed — will use static roster"
           fi
+          # Carry today's live sports headlines into the repo working tree so
+          # the server (already running, reads this file per-request) can fold
+          # them into hook-generation prompts as real-world grounding context.
+          if [ -f /tmp/oc-sports-headlines.json ]; then
+            mkdir -p data
+            cp /tmp/oc-sports-headlines.json data/sports-headlines.json
+            echo "Sports headlines available for hook grounding: $(cat data/sports-headlines.json | node -e "console.log(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).headlines.length)")"
+          else
+            echo "No sports headlines file — hook generation will run without live-news grounding."
+          fi
 
       - name: Fetch newest sports videos via Render
         if: ${{ github.event.inputs.skip_fetch != 'true' }}
@@ -237,6 +247,7 @@ jobs:
         continue-on-error: true
         run: |
           node scripts/submit-openclips-projects.mjs \
+            --genre=sports \
             --input=/tmp/oc-fresh-urls.json \
             --poll-interval=15000 \
             --timeout=18000000 \
@@ -253,7 +264,7 @@ jobs:
       - name: Rank top clips
         run: |
           TOP_N="${{ github.event.inputs.clip_count }}"
-          node scripts/rank-openclips-clips.mjs --top="${TOP_N:-5}" --output=/tmp/oc-top8.json
+          node scripts/rank-openclips-clips.mjs --genre=sports --top="${TOP_N:-5}" --output=/tmp/oc-top8.json
           echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));

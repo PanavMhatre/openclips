@@ -58,6 +58,7 @@ const AUDIO_DIR = path.join(DATA_DIR, "audio");
 const CAPTION_DIR = path.join(DATA_DIR, "captions");
 const OVERLAY_DIR = path.join(DATA_DIR, "overlays");
 const META_PATH = path.join(DATA_DIR, "projects.json");
+const SPORTS_HEADLINES_PATH = path.join(DATA_DIR, "sports-headlines.json");
 const FACE_TRACKER_PATH = path.join(__dirname, "face_tracker.py");
 const BALL_TRACKER_PATH = path.join(__dirname, "ball_tracker.py");
 const PORT = Number(process.env.PORT || 3000);
@@ -4176,8 +4177,21 @@ function fitHookToOverlayLines(hook, maxLines = 3, maxChars = 18) {
   return words.join(" ");
 }
 
+// Strip emoji/flags/pictographs from AI-generated text before it ever reaches
+// a video overlay. The sports hook prompt now asks the model not to use them,
+// but this is the hard guarantee — belt and suspenders, since a model can
+// still slip one in regardless of instructions.
+function stripEmoji(value) {
+  return String(value || "")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/\p{Regional_Indicator}/gu, "")
+    .replace(/[\uFE0F\u200D]/g, "") // variation selector + zero-width joiner (combined emoji glue)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function specifySportsHook(rawHook, sourceContext = {}) {
-  const hook = String(rawHook || "").trim();
+  const hook = stripEmoji(String(rawHook || "").trim());
   const ctx = cleanPodcastContext(sourceContext || {});
   // Real "Team A vs Team B" names only — never the raw broadcaster/channel
   // name (ESPN, NBA, UFC), which used to leak in here via ctx.channel's own
@@ -5883,6 +5897,23 @@ async function processSportsProject(projectId, { skipBufferSchedule = false } = 
   }
 }
 
+// Best-effort: fold today's real sports headlines (written by
+// scripts/generate-sports-queries.mjs during the CI job, when NEWSAPI_KEY is
+// configured) into the hook-generation prompts as grounding context — real
+// team names and results the model can cross-reference on top of the clip's
+// own transcript. Missing/malformed file is a silent no-op, same as today.
+function loadSportsHeadlinesBlock() {
+  try {
+    const raw = fs.readFileSync(SPORTS_HEADLINES_PATH, "utf8");
+    const data = JSON.parse(raw);
+    const headlines = Array.isArray(data.headlines) ? data.headlines.slice(0, 8).map((h) => String(h || "").trim()).filter(Boolean) : [];
+    if (!headlines.length) return "";
+    return `\nToday's live sports headlines (real, current — use only what's relevant to ground THIS clip's team names/result; never invent content unrelated to what the clip itself shows):\n${headlines.map((h) => `- ${h}`).join("\n")}\n`;
+  } catch {
+    return "";
+  }
+}
+
 async function inferSportsContext({ project, segments, keySlot } = {}) {
   const sport = String(project.sport || "Sports");
   requireGroqApiKeys();
@@ -5901,6 +5932,7 @@ Title: ${project.title}
 Sport: ${sport}
 Channel: ${project.sourceChannel || "Unknown"}
 Description: ${String(project.sourceDescription || "").slice(0, 600)}
+${loadSportsHeadlinesBlock()}
 
 Commentary excerpt:
 ${transcript}
@@ -5950,6 +5982,7 @@ Title: ${project.title}
 Teams: ${context.teams || context.channel || "Unknown"}
 Event: ${context.event || sport}
 What makes this compelling: ${context.hookAngle || `Best ${sport} moments`}
+${loadSportsHeadlinesBlock()}
 
 VIRAL MOMENTS TO HUNT (ranked by shareability):
 1. STUNNER PLAYS — impossible goals, miracle saves, ridiculous athleticism that defies belief
@@ -5974,6 +6007,13 @@ HOOK TEXT RULES (this is the MOST IMPORTANT field):
 - Add emotional charge after the team/player: STUNS, SHOCKS, DESTROYS, IMPOSSIBLE, ROBBERY,
            BREAKS THE RECORD, TIES IT LATE, BANNED??, DISALLOWED??, UNPLAYABLE, ON ANOTHER LEVEL
 - Add drama punctuation ?? or !! for controversial/disbelief moments
+- TEXT ONLY. No emoji, no flags, no hashtags, no unicode symbols of any kind — this renders as a
+  video overlay, not a caption, and emoji look cheap baked into the frame. ?? and !! are the only
+  punctuation you're allowed beyond letters and numbers.
+- Describe ONLY the specific action that happens inside THIS clip's start–end window (use the
+  chunk's own transcript, not the whole match). Never claim a stat, score, or event the clip itself
+  doesn't show — e.g. don't say "SCORES 3 GOALS" if this clip is one goal. A precise single moment
+  beats an inflated summary every time.
 - Return 5 to 8 clips. Rank by how much someone would NEED to share this.
 - Each clip: 15-55 seconds. Include lead-up + the play + immediate reaction.
 - "tags": 2-4 moment-type labels (e.g. ["Buzzer beater", "Game winner", "Record"])

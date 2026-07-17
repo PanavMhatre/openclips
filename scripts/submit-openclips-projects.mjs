@@ -17,6 +17,9 @@
  *   --poll-interval=<ms>  How often to poll status (default: 5000)
  *   --timeout=<ms>     Max wait per project (default: 3600000 = 1h)
  *   --output=<file>    Write finished project JSON array to file
+ *   --genre=sports     Submit to /api/sports-projects (genre: Sports) instead of
+ *                      /api/projects (genre: Podcast). Sport per video is guessed
+ *                      from its title; server re-infers the precise sport anyway.
  *
  * Exits 0 if all projects are ready, 1 if any failed or timed out.
  */
@@ -36,6 +39,7 @@ function parseArgs(argv) {
     output: null,
     pollInterval: 5_000,
     timeout: 60 * 60 * 1000,
+    genre: "podcast",
   };
   for (const arg of argv.slice(2)) {
     if (arg === "--stdin") { args.stdin = true; continue; }
@@ -45,9 +49,33 @@ function parseArgs(argv) {
     else if (key === "output") args.output = val;
     else if (key === "poll-interval") args.pollInterval = Number(val) || 5_000;
     else if (key === "timeout") args.timeout = Number(val) || 3_600_000;
+    else if (key === "genre") args.genre = String(val || "podcast").toLowerCase();
     else if (!arg.startsWith("--")) args.urls.push(arg);
   }
   return args;
+}
+
+// ── Sport detection (best-effort hint — server re-infers the precise sport
+// from the transcript in inferSportsContext, so this only needs to be a
+// reasonable starting guess for the ball-tracking crop logic) ────────────────
+const SPORT_KEYWORDS = [
+  { sport: "Basketball", re: /\b(nba|wnba|ncaa basketball|march madness|basketball)\b/i },
+  { sport: "Soccer", re: /\b(soccer|football club|premier league|la liga|bundesliga|serie a|ligue 1|uefa|champions league|europa league|fifa|world cup|mls|copa|epl)\b/i },
+  { sport: "American Football", re: /\b(nfl|college football|ncaaf|super bowl|touchdown)\b/i },
+  { sport: "Baseball", re: /\b(mlb|baseball|world series)\b/i },
+  { sport: "Hockey", re: /\b(nhl|hockey|stanley cup)\b/i },
+  { sport: "Golf", re: /\b(golf|pga|masters|ryder cup|birdie|eagle putt)\b/i },
+  { sport: "Tennis", re: /\b(tennis|wimbledon|us open tennis|french open|australian open|atp|wta)\b/i },
+  { sport: "MMA", re: /\b(ufc|mma|octagon)\b/i },
+  { sport: "Boxing", re: /\b(boxing|knockout|heavyweight title)\b/i },
+];
+
+function detectSport(title) {
+  const text = String(title || "");
+  for (const { sport, re } of SPORT_KEYWORDS) {
+    if (re.test(text)) return sport;
+  }
+  return "Sports";
 }
 
 async function readStdin() {
@@ -56,32 +84,42 @@ async function readStdin() {
   return data.trim();
 }
 
-function normalizeUrlList(raw) {
+// Keeps { url, title } objects instead of collapsing to bare URL strings —
+// needed so sports mode can guess a per-video sport from its title before
+// submitting.
+function normalizeVideoList(raw) {
   if (typeof raw === "string") {
     try {
       const parsed = JSON.parse(raw);
-      return normalizeUrlList(parsed);
+      return normalizeVideoList(parsed);
     } catch {
-      return raw.split(/\s+/).filter(Boolean);
+      return raw.split(/\s+/).filter(Boolean).map((url) => ({ url, title: "" }));
     }
   }
   if (Array.isArray(raw)) {
-    return raw.map((item) => (typeof item === "string" ? item : item?.url || item?.sourceUrl || "")).filter(Boolean);
+    return raw
+      .map((item) => (typeof item === "string" ? { url: item, title: "" } : { url: item?.url || item?.sourceUrl || "", title: item?.title || "" }))
+      .filter((v) => v.url);
   }
   return [];
 }
 
-async function submitProject(baseUrl, sourceUrl) {
-  const res = await fetch(`${baseUrl}/api/projects`, {
+async function submitProject(baseUrl, sourceUrl, { genre, title } = {}) {
+  const isSports = genre === "sports";
+  const endpoint = isSports ? "/api/sports-projects" : "/api/projects";
+  const body = isSports
+    ? { sourceUrl, sport: detectSport(title) }
+    : { sourceUrl };
+  const res = await fetch(`${baseUrl}${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sourceUrl }),
+    body: JSON.stringify(body),
   });
-  const body = await res.json();
+  const resBody = await res.json();
   if (!res.ok) {
-    throw new Error(body?.error || `HTTP ${res.status}`);
+    throw new Error(resBody?.error || `HTTP ${res.status}`);
   }
-  return body.project;
+  return resBody.project;
 }
 
 async function pollProject(baseUrl, id, { pollInterval, timeout }) {
@@ -100,32 +138,33 @@ async function pollProject(baseUrl, id, { pollInterval, timeout }) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  const isSports = args.genre === "sports";
 
-  let urls = [...args.urls];
+  let videos = args.urls.map((url) => ({ url, title: "" }));
 
   if (args.stdin) {
     const raw = await readStdin();
-    urls = [...urls, ...normalizeUrlList(raw)];
+    videos = [...videos, ...normalizeVideoList(raw)];
   } else if (args.input) {
     const raw = readFileSync(args.input, "utf8");
-    urls = [...urls, ...normalizeUrlList(raw)];
+    videos = [...videos, ...normalizeVideoList(raw)];
   }
 
-  if (!urls.length) {
+  if (!videos.length) {
     process.stderr.write("Usage: node submit-openclips-projects.mjs <url> [...]\n");
     process.exit(1);
   }
 
-  process.stderr.write(`Submitting ${urls.length} URL(s) to ${args.baseUrl}...\n`);
+  process.stderr.write(`Submitting ${videos.length} URL(s) to ${args.baseUrl} (genre: ${args.genre})...\n`);
 
   const submitted = [];
-  for (const url of urls) {
+  for (const video of videos) {
     try {
-      const project = await submitProject(args.baseUrl, url);
-      process.stderr.write(`  Queued: "${project.title}" [${project.id}]\n`);
+      const project = await submitProject(args.baseUrl, video.url, { genre: args.genre, title: video.title });
+      process.stderr.write(`  Queued: "${project.title}"${isSports ? ` [${project.sport}]` : ""} [${project.id}]\n`);
       submitted.push(project);
     } catch (err) {
-      process.stderr.write(`  [error] ${url}: ${err.message}\n`);
+      process.stderr.write(`  [error] ${video.url}: ${err.message}\n`);
     }
   }
 

@@ -46,11 +46,30 @@ async function aiRankClips(candidates, topN) {
   const key = getGroqKey();
   if (!key) return null;
 
+  const isSports = candidates[0]?._projectGenre === "Sports";
+
   const list = candidates.slice(0, 20).map((c, i) => (
     `[${i}] hook: "${c.hook || c.title}" | title: "${c.title}" | duration: ${Math.round(c.duration||0)}s | focus: "${(c.focus||"").slice(0,120)}"`
   )).join("\n");
 
-  const prompt = `You are the final editor for PodByte Edits — a finance/tech podcast clip channel. Your job: pick the ${topN} clips that will get the most shares, follows, and replays on TikTok and Reels. The channel's reputation depends on only posting clips that make viewers feel smart for watching.
+  const prompt = isSports ? `You are the final editor for a viral sports highlights channel on TikTok, Reels, and YouTube Shorts. Your job: pick the ${topN} clips that will get the most shares, follows, and replays. The channel's reputation depends on only posting clips of real, decisive sports moments.
+
+CANDIDATES:
+${list}
+
+WHAT WINS: a hook that names the actual team and/or player and the specific, decisive moment — buzzer beater, game winner, upset, record, controversial call. Someone who reads only the hook knows exactly what they're about to watch and needs to see it.
+
+WHAT LOSES — immediately deprioritize any clip that:
+- Has a generic hook with no identifiable team or player name
+- Could describe literally any highlight ("big moment", "watch this", "incredible play")
+- Is a near-duplicate of a higher-scoring clip from the same game or the same play (pick the better one, skip the duplicate)
+- Is under 15 seconds (too short to land) or over 58 seconds (retention collapses)
+- Reads like a recap/intro rather than the actual play itself
+
+DIVERSITY IS REQUIRED: do not select more than 2 clips from the same game/match. Spread across different games, sports, and moments where possible so a viewer who watches all ${topN} sees a range, not one match repeated.
+
+Return ONLY a JSON array of exactly ${topN} indices ranked best first. No explanation.
+Example: [3,7,1,0,12,5,9,2]` : `You are the final editor for PodByte Edits — a finance/tech podcast clip channel. Your job: pick the ${topN} clips that will get the most shares, follows, and replays on TikTok and Reels. The channel's reputation depends on only posting clips that make viewers feel smart for watching.
 
 CANDIDATES:
 ${list}
@@ -185,6 +204,7 @@ function parseArgs(argv) {
     output: null,
     projectId: null,
     ledgerPath: process.env.OPENCLIPS_BUFFER_LEDGER || DEFAULT_LEDGER_PATH,
+    genre: "podcast",
   };
   for (const arg of argv.slice(2)) {
     const [key, val] = arg.replace(/^--/, "").split("=");
@@ -193,6 +213,7 @@ function parseArgs(argv) {
     else if (key === "output") args.output = val;
     else if (key === "project") args.projectId = val;
     else if (key === "ledger") args.ledgerPath = val;
+    else if (key === "genre") args.genre = String(val || "podcast").toLowerCase();
   }
   return args;
 }
@@ -304,19 +325,38 @@ const VAGUE_HOOK_PATTERNS = [
   /\b(?:interesting|fascinating|important|great|good|nice|cool|amazing)\b/i,
 ];
 
-function hookScore(hook) {
+// Sports equivalents of STRONG/VAGUE_HOOK_PATTERNS above — the finance-tuned
+// sets ($ amounts, "crash"/"bankrupt", "secret"/"proof") aren't meaningful
+// signals for a sports hook, whose planning prompt (server/index.mjs
+// planSportsClips) asks for team/player name + result + drama punctuation.
+const SPORTS_STRONG_HOOK_PATTERNS = [
+  /\b(?:vs\.?|versus|beats?|beat|upsets?|stuns?|shocks?|destroys?|crushes?|ties?)\b/i, // result/conflict frame
+  /\b(?:buzzer.beater|game.?winner|walk.?off|comeback|record|upset|robbery|disallowed|unplayable|breaks?)\b/i, // moment types
+  /\d/,        // score, time, or stat the prompt is required to include
+  /\?\?|!!/,   // drama punctuation the sports prompt asks for on controversial/disbelief moments
+];
+
+const SPORTS_VAGUE_HOOK_PATTERNS = [
+  /^(?:this|that|it|they|he|she|we|you)\b/i,
+  /\b(?:nobody believed this|they couldn.t stop it|watch what happens|history made|this is insane|incredible moment|unbelievable moment)\b/i,
+];
+
+function hookScore(hook, isSports = false) {
   if (!hook || hook.trim().length < 8) return -20;
   if (isTruncated(hook)) return -20;
   const h = hook.trim();
   if (WEAK_HOOK_PATTERNS.some((re) => re.test(h))) return -20;
   if (h.split(" ").length < 4) return -10;
 
+  const strongPatterns = isSports ? SPORTS_STRONG_HOOK_PATTERNS : STRONG_HOOK_PATTERNS;
+  const vaguePatterns = isSports ? SPORTS_VAGUE_HOOK_PATTERNS : VAGUE_HOOK_PATTERNS;
+
   let bonus = 0;
   // Reward hooks that make a specific claim with stakes
-  const strongMatches = STRONG_HOOK_PATTERNS.filter((re) => re.test(h)).length;
+  const strongMatches = strongPatterns.filter((re) => re.test(h)).length;
   bonus += Math.min(20, strongMatches * 7);
   // Penalise vague hooks that analytics show get 0 views
-  if (VAGUE_HOOK_PATTERNS.some((re) => re.test(h))) bonus -= 15;
+  if (vaguePatterns.some((re) => re.test(h))) bonus -= 15;
 
   if (bonus !== 0) {
     process.stderr.write(`  [hook] "${h.slice(0, 60)}" → ${bonus > 0 ? "+" : ""}${bonus}\n`);
@@ -339,12 +379,17 @@ function durationScore(seconds) {
 }
 
 function scoreClip(clip) {
+  const isSports = clip._projectGenre === "Sports";
   const base = Math.max(0, Math.min(100, Number(clip.score) || 50));
-  const hook = hookScore(clip.hook || clip.title);
+  const hook = hookScore(clip.hook || clip.title, isSports);
   const focus = focusScore(clip.focus);
   const duration = durationScore(Number(clip.duration) || 0);
   const filePenalty = clip._hasFile ? 0 : -25;
-  const analytics = analyticsBoost(clip, _signals);
+  // Skip podcast-channel performance signals (strategy-brief boost/avoid
+  // keywords, YouTube topic scores) for sports clips — that data is only
+  // ever computed from the podcast channel (@podbyteedits) and has no
+  // relationship to what performs well for sports content.
+  const analytics = isSports ? 0 : analyticsBoost(clip, _signals);
   return Math.max(0, base + hook + focus + duration + filePenalty + analytics);
 }
 
@@ -373,11 +418,15 @@ function isSameTopic(wordsA, wordsB) {
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
-async function loadFromApi(baseUrl, projectId) {
+async function loadFromApi(baseUrl, projectId, genre = "podcast") {
   try {
+    // GET /api/projects filters OUT genre:"Sports" projects (it's the
+    // podcast-only listing the web UI uses) — sports ranking must hit
+    // /api/sports-projects instead or it will always see zero clips.
+    const listPath = genre === "sports" ? "/api/sports-projects" : "/api/projects";
     const url = projectId
       ? `${baseUrl}/api/projects/${projectId}`
-      : `${baseUrl}/api/projects`;
+      : `${baseUrl}${listPath}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) return null;
     const data = await res.json();
@@ -421,6 +470,8 @@ function flattenClips(projects) {
         ...clip,
         _projectTitle: project.title || "",
         _projectId: project.id || "",
+        _projectGenre: project.genre || "Podcast",
+        _projectLayout: project.layout || "",
         _hasFile: hasFile,
         _filePath: (hasFile && clip.filePath) ? clip.filePath : localPath,
         _fileName: fileName,
@@ -446,7 +497,7 @@ async function main() {
   let clips = [];
 
   // 1. Try the live API
-  const apiProjects = await loadFromApi(args.baseUrl, args.projectId);
+  const apiProjects = await loadFromApi(args.baseUrl, args.projectId, args.genre);
   if (apiProjects) {
     process.stderr.write(`Loaded ${apiProjects.length} project(s) from API.\n`);
     clips = flattenClips(apiProjects);

@@ -28,6 +28,7 @@ import { spawn } from "node:child_process";
 const NEWS_API_KEY  = process.env.NEWSAPI_KEY || "";
 const GROQ_API_KEY  = (process.env.GROQ_API_KEY || process.env.GROQ_API_KEYS || "").split(",")[0].trim();
 const OUTPUT_FILE   = process.env.DYNAMIC_ROSTER_FILE || "/tmp/oc-dynamic-roster.md";
+const HEADLINES_FILE = process.env.DYNAMIC_ROSTER_HEADLINES_FILE || "/tmp/oc-sports-headlines.json";
 const TODAY         = new Date().toISOString().slice(0, 10);
 const YEAR          = new Date().getFullYear();
 
@@ -170,6 +171,16 @@ async function main() {
   if (headlines.length) {
     process.stderr.write("Top headlines:\n");
     headlines.slice(0, 6).forEach(h => process.stderr.write(`  • ${h}\n`));
+    // Persist headlines so hook-generation (server/index.mjs inferSportsContext
+    // / planSportsClips) can ground hooks in real, current events instead of
+    // only what's audible in a source video's own commentary. Written even if
+    // query generation below fails — the headlines are independently useful.
+    try {
+      writeFileSync(HEADLINES_FILE, JSON.stringify({ date: TODAY, headlines: headlines.slice(0, 15) }, null, 2));
+      process.stderr.write(`Headlines written to ${HEADLINES_FILE}\n`);
+    } catch (e) {
+      process.stderr.write(`Failed to write headlines file: ${e.message}\n`);
+    }
   }
 
   const queries = await generateQueriesWithGroq(headlines, trendingTitles);
