@@ -13,7 +13,7 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { writeFile, unlink, mkdir, rm } from "node:fs/promises";
+import { writeFile, readFile, unlink, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -26,7 +26,56 @@ const SECRET = process.env.FETCH_SECRET || "";
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://64.181.199.39:${PORT}`).replace(/\/+$/, "");
 const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-const jobs = {};
+// Job state is written to disk on every change and reloaded on startup so a
+// process restart (crash, OOM, `systemctl restart`, the /api/update
+// self-update below) doesn't silently orphan every in-flight job — before
+// this, `jobs` was an in-memory-only object, so any restart between a job's
+// creation and its completion made every subsequent status poll 404
+// forever, with no way for the caller to distinguish that from "still
+// running." See scripts/fetch-via-render.mjs for the client-side half of
+// this fix (fails fast on a confirmed-lost job instead of polling for 25min).
+const JOBS_STATE_PATH = join(tmpdir(), "oracle-proxy-jobs-state.json");
+const JOB_RETENTION_MS = 6 * 60 * 60 * 1000; // 6 hours — matches FILE_TTL_MS with headroom
+
+let jobs = {};
+try {
+  jobs = JSON.parse(await readFile(JOBS_STATE_PATH, "utf8"));
+  console.log(`[oracle-proxy] restored ${Object.keys(jobs).length} job(s) from disk after restart`);
+} catch {
+  jobs = {};
+}
+
+async function writeJobsToDisk() {
+  const cutoff = Date.now() - JOB_RETENTION_MS;
+  for (const [id, job] of Object.entries(jobs)) {
+    if ((job.createdAt || 0) < cutoff) delete jobs[id];
+  }
+  try {
+    await writeFile(JOBS_STATE_PATH, JSON.stringify(jobs));
+  } catch (e) {
+    console.error(`[oracle-proxy] failed to persist job state: ${e.message}`);
+  }
+}
+
+let persistTimer = null;
+
+// Bypasses the debounce below — used right after a job is created, since
+// that's the single most important moment to survive a restart (the caller
+// has a jobId and is about to start depending on it).
+function persistJobsImmediate() {
+  if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+  void writeJobsToDisk();
+}
+
+function persistJobs() {
+  // Debounce — job status can update in rapid bursts; coalesce into one write.
+  if (persistTimer) return;
+  persistTimer = setTimeout(async () => {
+    persistTimer = null;
+    await writeJobsToDisk();
+  }, 250);
+}
+
 const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
 
 function parseRoster(md) {
@@ -103,7 +152,8 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
     }
 
     if (!videoList.length) {
-      jobs[jobId] = { ok: false, status: "done", error: "yt-dlp returned no results across all channels", count: 0, videos: [] };
+      jobs[jobId] = { ...jobs[jobId], ok: false, status: "done", error: "yt-dlp returned no results across all channels", count: 0, videos: [] };
+      persistJobs();
       return;
     }
 
@@ -161,7 +211,8 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
     }
 
     const errorSummary = downloadErrors.length ? ` Errors: ${downloadErrors.slice(0, 2).join(" | ")}` : "";
-    jobs[jobId] = { ok: downloaded.length > 0, status: "done", count: downloaded.length, videos: downloaded, error: downloaded.length === 0 ? `all downloads failed.${errorSummary}` : undefined };
+    jobs[jobId] = { ...jobs[jobId], ok: downloaded.length > 0, status: "done", count: downloaded.length, videos: downloaded, error: downloaded.length === 0 ? `all downloads failed.${errorSummary}` : undefined };
+    persistJobs();
     console.log(`[oracle-proxy] job ${jobId} done — ${downloaded.length}/${videoList.length} videos`);
 
     // Auto-delete files after TTL
@@ -169,7 +220,8 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
 
   } catch (err) {
     console.error(`[oracle-proxy] job ${jobId} crashed:`, err.message);
-    jobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+    jobs[jobId] = { ...jobs[jobId], ok: false, status: "done", error: err.message, count: 0, videos: [] };
+    persistJobs();
     rm(fileDir, { recursive: true, force: true }).catch(() => {});
   } finally {
     if (cookiesPath) await unlink(cookiesPath).catch(() => {});
@@ -271,11 +323,13 @@ const server = createServer(async (req, res) => {
     if (hasPreSearched) console.log(`[oracle-proxy] download-only mode: received ${preSearchedUrls.length} URL(s) from caller`);
 
     const jobId = randomUUID();
-    jobs[jobId] = { ok: false, status: "running", count: 0, videos: [] };
+    jobs[jobId] = { ok: false, status: "running", count: 0, videos: [], createdAt: Date.now() };
+    persistJobsImmediate();
     send(res, 200, { ok: true, jobId, status: "running" });
 
     runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, proxyUrl, hasPreSearched ? preSearchedUrls : null).catch(err => {
-      jobs[jobId] = { ok: false, status: "done", error: err.message, count: 0, videos: [] };
+      jobs[jobId] = { ...jobs[jobId], ok: false, status: "done", error: err.message, count: 0, videos: [] };
+      persistJobs();
     });
     return;
   }

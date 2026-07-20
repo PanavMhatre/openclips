@@ -263,14 +263,40 @@ async function main() {
     process.exit(1);
   }
 
-  // Poll until done — 30s intervals, up to 25 minutes
+  // Poll until done — 30s intervals, up to 25 minutes.
+  //
+  // oracle-proxy/server.mjs keeps job state in a plain in-memory object with
+  // zero persistence. It writes jobs[jobId] synchronously BEFORE it even
+  // sends the "job started" response, so a 404 on a job we were just handed
+  // is only possible if the process restarted in between (crash, OOM,
+  // manual redeploy) and wiped its memory — not a "still starting up" race.
+  // Once that's happened the job is gone forever; no amount of continued
+  // polling of the same jobId can ever succeed. Bail out fast on a confirmed
+  // pattern (2 back-to-back 404s) instead of burning the full 25-minute
+  // timeout on a job that can never come back.
   const maxAttempts = 50;
   let result = null;
+  let consecutiveJobLost = 0;
+  let jobLost = false;
 
   for (let i = 1; i <= maxAttempts; i++) {
     await sleep(30_000);
     try {
       const statusRes = await fetch(`${baseUrl}/api/fetch-videos/status/${jobId}`, { headers });
+      if (statusRes.status === 404) {
+        consecutiveJobLost += 1;
+        process.stderr.write(`  [poll ${i}/${maxAttempts}] HTTP 404 — proxy doesn't recognize this job (${consecutiveJobLost}x)...\n`);
+        if (consecutiveJobLost >= 2) {
+          process.stderr.write(
+            "Oracle VM proxy no longer recognizes this job — it almost certainly restarted and lost its " +
+            "in-memory job state. Giving up on this job now instead of waiting out the full timeout.\n",
+          );
+          jobLost = true;
+          break;
+        }
+        continue;
+      }
+      consecutiveJobLost = 0;
       if (!statusRes.ok) {
         process.stderr.write(`  [poll ${i}/${maxAttempts}] HTTP ${statusRes.status} — retrying...\n`);
         continue;
@@ -282,12 +308,27 @@ async function main() {
         break;
       }
     } catch (err) {
+      consecutiveJobLost = 0;
       process.stderr.write(`  [poll ${i}/${maxAttempts}] error: ${err.message} — retrying...\n`);
     }
   }
 
   if (!result) {
-    process.stderr.write("Error: timed out waiting for fetch-videos job.\n");
+    process.stderr.write(
+      jobLost
+        ? "Error: Oracle VM proxy lost its job state before the job finished.\n"
+        : "Error: timed out waiting for fetch-videos job.\n",
+    );
+    // Whether the job was confirmed lost or just never finished in time, if we
+    // already have real YouTube URLs in hand (from the client-side YouTube Data
+    // API search), don't waste them — hand them to the caller so local yt-dlp
+    // (with bgutil, already running on this same GitHub Actions runner) can
+    // download them directly instead of failing the whole run.
+    if (postBody.urls && postBody.urls.length > 0) {
+      process.stderr.write("Falling back to direct YouTube URLs — local yt-dlp with bgutil will handle download.\n");
+      writeDirectUrls(postBody.urls, args);
+      return;
+    }
     process.exit(1);
   }
 
