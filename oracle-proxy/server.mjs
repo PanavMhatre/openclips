@@ -13,7 +13,7 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { writeFile, readFile, unlink, mkdir, rm } from "node:fs/promises";
+import { writeFile, readFile, unlink, mkdir, rm, readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -26,14 +26,18 @@ const SECRET = process.env.FETCH_SECRET || "";
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://64.181.199.39:${PORT}`).replace(/\/+$/, "");
 const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-// Job state is written to disk on every change and reloaded on startup so a
-// process restart (crash, OOM, `systemctl restart`, the /api/update
-// self-update below) doesn't silently orphan every in-flight job — before
-// this, `jobs` was an in-memory-only object, so any restart between a job's
-// creation and its completion made every subsequent status poll 404
-// forever, with no way for the caller to distinguish that from "still
-// running." See scripts/fetch-via-render.mjs for the client-side half of
-// this fix (fails fast on a confirmed-lost job instead of polling for 25min).
+// Cloudflare WARP interface IP — routes yt-dlp through Cloudflare's network (104.28.x.x),
+// bypassing Oracle Cloud's blocked datacenter IP. No external proxy needed.
+const WARP_SOURCE_IP = "172.16.0.2";
+
+// Job state lives only in memory by default. The uncaughtException/
+// unhandledRejection handlers below already stop an isolated error from
+// taking the whole process down — but Restart=always in systemd still means
+// ANY restart (OOM kill, `systemctl restart`, VM reboot, this exact service
+// getting redeployed) wipes every in-flight job, and callers then poll a
+// jobId that no longer exists and 404 forever until their own timeout. So
+// also persist job state to disk on every change and reload it on startup —
+// belt and suspenders with the exception handlers, not a replacement for them.
 const JOBS_STATE_PATH = join(tmpdir(), "oracle-proxy-jobs-state.json");
 const JOB_RETENTION_MS = 6 * 60 * 60 * 1000; // 6 hours — matches FILE_TTL_MS with headroom
 
@@ -78,6 +82,17 @@ function persistJobs() {
 
 const AUDIO_RE = /\(audio\)|\[audio\]|\baudio[\s-]only\b/i;
 
+// Job state lives only in memory. A crash here used to take the whole process
+// down, wiping every in-flight job — callers would then poll a jobId that no
+// longer exists and 404 forever until their own timeout. Nothing here should
+// ever be worth killing the server over, so log and keep running instead.
+process.on("uncaughtException", (err) => {
+  console.error("[oracle-proxy] UNCAUGHT EXCEPTION (service staying up):", err?.stack || err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[oracle-proxy] UNHANDLED REJECTION (service staying up):", err?.stack || err);
+});
+
 function parseRoster(md) {
   const channels = [];
   for (const line of (md || "").split("\n")) {
@@ -89,7 +104,7 @@ function parseRoster(md) {
   return channels;
 }
 
-async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl, preSearchedUrls = null) {
+async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl, preSearchedUrls = null, sourceAddress = null) {
   let cookiesPath = null;
   if (cookiesB64) {
     cookiesPath = join(tmpdir(), `cookies-${jobId}.txt`);
@@ -122,6 +137,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           ];
           if (cookiesPath) args.push("--cookies", cookiesPath);
           if (proxyUrl) args.push("--proxy", proxyUrl);
+          if (sourceAddress) args.push("--source-address", sourceAddress);
           args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
 
           const proc = spawn("yt-dlp", args, { timeout: 120000 });
@@ -166,20 +182,19 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       const fileName = `${safeTitle}.mp4`;
       const outPath = join(fileDir, fileName);
 
-      const tryDownload = (useCookies) => new Promise((resolve, reject) => {
+      const tryDownload = (useProxy) => new Promise((resolve, reject) => {
         const args = [
           "--no-check-certificate",
-          "-f", "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/best",
+          "-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best",
           "--merge-output-format", "mp4",
           "-o", outPath,
           "--no-playlist",
           "--extractor-args", "youtube:player_client=ios,android,web",
-          "--retries", "3",
+          "--retries", "2",
         ];
-        // Proxy is required — Oracle VM datacenter IP gets bot-blocked without it
-        if (proxyUrl) args.push("--proxy", proxyUrl);
-        // Cookies: only pass when explicitly requested; expired cookies trigger bot-detection
-        if (useCookies && cookiesPath) args.push("--cookies", cookiesPath);
+        if (cookiesPath) args.push("--cookies", cookiesPath);
+        if (useProxy && proxyUrl) args.push("--proxy", proxyUrl);
+        if (sourceAddress) args.push("--source-address", sourceAddress);
         args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 300000 });
         let stderr = "";
@@ -189,14 +204,17 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       });
 
       try {
-        // First attempt: proxy only, no cookies (residential IP + ios client handles public content)
-        // Passing expired cookies causes "Sign in to confirm you're not a bot" even through proxy
-        try {
+        // Try with proxy first (residential IP avoids geo-blocks), then without
+        if (proxyUrl) {
+          try {
+            await tryDownload(true);
+          } catch (proxyErr) {
+            console.error(`[oracle-proxy] proxy download failed for ${video.title.slice(0, 50)}: ${proxyErr.message.slice(0, 150)}`);
+            console.log(`[oracle-proxy] retrying without proxy...`);
+            await tryDownload(false);
+          }
+        } else {
           await tryDownload(false);
-        } catch (noCookieErr) {
-          // Second attempt: proxy + cookies (for age-restricted or members-only content)
-          console.log(`[oracle-proxy] retrying with cookies: ${video.title.slice(0, 50)}`);
-          await tryDownload(true);
         }
 
         const downloadUrl = `${PUBLIC_URL}/files/${jobId}/${encodeURIComponent(fileName)}`;
@@ -256,6 +274,78 @@ const server = createServer(async (req, res) => {
       }
     }
     return send(res, 404, { error: "Not found" });
+  }
+
+
+  // ── /download — synchronous WARP-backed download (used by smart_broll.py) ──────────────
+  if (req.method === "POST" && req.url === "/download") {
+    let body = "";
+    req.on("data", d => body += d);
+    await new Promise(r => req.on("end", r));
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { return send(res, 400, { error: "Invalid JSON" }); }
+    const { url: dlUrl, write_subs = false } = parsed;
+    if (!dlUrl) return send(res, 400, { error: "url required" });
+    // Auth check (same FETCH_SECRET as other endpoints)
+    if (SECRET) {
+      const dlAuth = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (dlAuth !== SECRET) return send(res, 401, { error: "Unauthorized" });
+    }
+
+    const dlJobId = randomUUID();
+    const dlDir = join(tmpdir(), "oracle-dl", dlJobId);
+    await mkdir(dlDir, { recursive: true });
+
+    const dlArgs = [
+      "-f", "bv*[ext=mp4][height<=2160]+ba[ext=m4a]/bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=2160]/best",
+      "-o", join(dlDir, "video.%(ext)s"),
+      "--no-playlist",
+      "--extractor-args", "youtube:player_client=tv_embedded,ios,android",
+      "--source-address", WARP_SOURCE_IP,
+      "--socket-timeout", "30",
+      "--no-check-certificate",
+      "--retries", "3",
+    ];
+    if (write_subs) dlArgs.push("--write-subs", "--write-auto-subs", "--sub-langs", "en", "--sub-format", "vtt");
+    dlArgs.push(dlUrl);
+
+    console.log("[oracle-proxy] /download WARP ip=" + WARP_SOURCE_IP + " " + dlUrl.slice(0, 100));
+    try {
+      await new Promise((resolve, reject) => {
+        const proc = spawn("yt-dlp", dlArgs, { timeout: 120000 });
+        let stderr = "";
+        proc.stderr.on("data", d => { stderr += d; process.stderr.write(d); });
+        proc.on("close", code => code === 0 ? resolve() : reject(new Error("exit " + code + ": " + stderr.slice(-300))));
+        proc.on("error", reject);
+      });
+    } catch (err) {
+      console.error("[oracle-proxy] /download failed: " + err.message.slice(0, 200));
+      await rm(dlDir, { recursive: true, force: true }).catch(() => {});
+      return send(res, 500, { error: err.message.slice(0, 200) });
+    }
+
+    try {
+      const dlFiles = await readdir(dlDir);
+      const videoFile = dlFiles.find(f => /\.(mp4|webm|mkv|m4v)$/i.test(f));
+      if (!videoFile) {
+        await rm(dlDir, { recursive: true, force: true }).catch(() => {});
+        return send(res, 500, { error: "yt-dlp produced no video file" });
+      }
+      const filePath = join(dlDir, videoFile);
+      console.log("[oracle-proxy] /download streaming: " + videoFile);
+      res.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Content-Disposition": "attachment; filename=\"" + videoFile + "\"",
+      });
+      const dlStream = createReadStream(filePath);
+      dlStream.pipe(res);
+      res.on("finish", () => rm(dlDir, { recursive: true, force: true }).catch(() => {}));
+    } catch (err) {
+      console.error("[oracle-proxy] /download post-processing failed: " + err.message.slice(0, 200));
+      await rm(dlDir, { recursive: true, force: true }).catch(() => {});
+      if (!res.headersSent) return send(res, 500, { error: err.message.slice(0, 200) });
+    }
+    return;
   }
 
   if (SECRET) {
@@ -318,8 +408,11 @@ const server = createServer(async (req, res) => {
     const channels = hasPreSearched ? [] : parseRoster(rosterContent);
     if (!hasPreSearched && !channels.length) return send(res, 400, { error: "No channels parsed from roster" });
 
-    const proxyUrl = proxies ? proxies.split(/[,\n]/).map(s => s.trim()).filter(Boolean)[0] : null;
-    if (proxyUrl) console.log(`[oracle-proxy] using proxy for downloads: ${proxyUrl.slice(0, 40)}...`);
+    const externalProxy = proxies ? proxies.split(/[,\n]/).map(s => s.trim()).filter(Boolean)[0] : null;
+    // Use Cloudflare WARP source IP so yt-dlp exits via Cloudflare's network (bypasses Oracle IP block).
+    // If an external proxy is provided (e.g. residential), it takes precedence.
+    const sourceAddress = externalProxy ? null : WARP_SOURCE_IP;
+    console.log(`[oracle-proxy] exit via: ${externalProxy ? `proxy ${externalProxy.slice(0, 50)}` : `WARP ${WARP_SOURCE_IP}`}`);
     if (hasPreSearched) console.log(`[oracle-proxy] download-only mode: received ${preSearchedUrls.length} URL(s) from caller`);
 
     const jobId = randomUUID();
@@ -327,7 +420,7 @@ const server = createServer(async (req, res) => {
     persistJobsImmediate();
     send(res, 200, { ok: true, jobId, status: "running" });
 
-    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, proxyUrl, hasPreSearched ? preSearchedUrls : null).catch(err => {
+    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, externalProxy, hasPreSearched ? preSearchedUrls : null, sourceAddress).catch(err => {
       jobs[jobId] = { ...jobs[jobId], ok: false, status: "done", error: err.message, count: 0, videos: [] };
       persistJobs();
     });
