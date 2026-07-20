@@ -684,9 +684,10 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     // second encode pass — baking Pixabay overlays onto an already-rendered
     // clip — doesn't throw away quality the first pass just spent time on.
     // "medium" instead of the main render's "slow": this step re-encodes the
-    // whole clip a SECOND time inside a single CI job with a fixed 20-minute
-    // wall-clock budget across every clip in the batch, so it can't afford
-    // "slow"'s ~2x encode time without risking the batch timing out.
+    // whole clip a SECOND time inside a single CI job with a fixed 30-minute
+    // step-level wall-clock budget (daily-publish.yml) across every clip in
+    // the batch, so it can't afford "slow"'s ~2x encode time without risking
+    // the batch timing out.
     "-preset", "medium",
     "-crf", "18",
     "-profile:v", "high",
@@ -702,7 +703,20 @@ async function enhanceClip(clipPath, clipMeta, apiKey, numImages, dryRun, force)
     `    Rendering ${usedMediaPaths.length} overlay(s) [${videoCount} video, ${imageCount} image] onto ${duration.toFixed(1)}s clip...\n`,
   );
   try {
-    await execFileAsync("ffmpeg", ffmpegArgs, { timeout: 600_000 });
+    // A hung/stuck ffmpeg (e.g. decoding a truncated or corrupt Pixabay image)
+    // doesn't reliably die from SIGTERM — ffmpeg intercepts it to try to
+    // finish encoding "gracefully," and if the hang is on the decode side
+    // that graceful-shutdown path never gets a chance to run. Node's execFile
+    // `timeout` only sends one signal (SIGTERM by default) and then just
+    // waits for the child to exit — if it doesn't, this promise never
+    // settles. That's exactly what took a whole run down: this 10-minute
+    // timeout fired, SIGTERM did nothing, and the process lingered for
+    // another ~32 minutes until GitHub Actions' own step timeout (which ALSO
+    // sends SIGTERM first) finally forced it dead ~12 minutes after that.
+    // killSignal: SIGKILL cannot be intercepted or deferred, so the timeout
+    // now actually bounds wall-clock time. 6 clips processed sequentially,
+    // so this must stay well under the 30-minute step budget divided by 6.
+    await execFileAsync("ffmpeg", ffmpegArgs, { timeout: 180_000, killSignal: "SIGKILL" });
   } catch (err) {
     process.stderr.write(`    [error] ffmpeg failed:\n${err.stderr?.slice(-800) || err.message.slice(0, 800)}\n`);
     cleanupTmp(tmpDir, usedMediaPaths);
