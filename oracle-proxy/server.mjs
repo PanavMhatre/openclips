@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Oracle VM download proxy — runs on a clean IP so YouTube doesn't block yt-dlp.
-// Exposes the same /api/fetch-videos interface as the Render server.
+// Download proxy — runs on a clean IP (routed through Cloudflare WARP, see
+// WARP_PROXY_URL below) so YouTube doesn't block yt-dlp. Exposes the same
+// /api/fetch-videos interface as the Render server.
 //
 // Env vars (set in /etc/oracle-proxy.env):
 //   FETCH_SECRET   Bearer token (must match OPENCLIPS_FETCH_SECRET in GitHub)
-//   PUBLIC_URL     Base URL GitHub Actions uses to reach this server (e.g. http://64.181.199.39:7474)
+//   PUBLIC_URL     Base URL GitHub Actions uses to reach this server (e.g. http://<this box's public IP>:7474) — always set explicitly, don't rely on the fallback below
 //   PORT           default: 7474
 //
 // Files are served directly from the VM over HTTP — no GitHub upload needed.
@@ -23,12 +24,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PORT = Number(process.env.PORT || 7474);
 const SECRET = process.env.FETCH_SECRET || "";
-const PUBLIC_URL = (process.env.PUBLIC_URL || `http://64.181.199.39:${PORT}`).replace(/\/+$/, "");
+// No sane default here — this must be set per-deployment (see /etc/oracle-proxy.env).
+// A wrong/stale value silently breaks every downloadUrl this server hands out.
+const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-// Cloudflare WARP interface IP — routes yt-dlp through Cloudflare's network (104.28.x.x),
-// bypassing Oracle Cloud's blocked datacenter IP. No external proxy needed.
-const WARP_SOURCE_IP = "172.16.0.2";
+// Cloudflare WARP client running in "proxy" mode — a local SOCKS5 proxy that
+// only affects traffic explicitly pointed at it (unlike "warp"/full-tunnel
+// mode, which reroutes the whole box's default route and can take out the
+// SSH session managing it). Routes yt-dlp through Cloudflare's network,
+// bypassing the cloud provider's blocked datacenter IP. No external proxy
+// needed. Default port per `warp-cli mode proxy` — verify with
+// `warp-cli settings` if this ever needs to change.
+const WARP_PROXY_URL = "socks5h://127.0.0.1:40000";
 
 // Job state lives only in memory by default. The uncaughtException/
 // unhandledRejection handlers below already stop an isolated error from
@@ -104,7 +112,7 @@ function parseRoster(md) {
   return channels;
 }
 
-async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl, preSearchedUrls = null, sourceAddress = null) {
+async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64, proxyUrl, preSearchedUrls = null) {
   let cookiesPath = null;
   if (cookiesB64) {
     cookiesPath = join(tmpdir(), `cookies-${jobId}.txt`);
@@ -137,7 +145,6 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           ];
           if (cookiesPath) args.push("--cookies", cookiesPath);
           if (proxyUrl) args.push("--proxy", proxyUrl);
-          if (sourceAddress) args.push("--source-address", sourceAddress);
           args.push(`ytsearch${fetchCount}:${ch.searchAlias}`);
 
           const proc = spawn("yt-dlp", args, { timeout: 120000 });
@@ -194,7 +201,6 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
         ];
         if (cookiesPath) args.push("--cookies", cookiesPath);
         if (useProxy && proxyUrl) args.push("--proxy", proxyUrl);
-        if (sourceAddress) args.push("--source-address", sourceAddress);
         args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 300000 });
         let stderr = "";
@@ -301,7 +307,7 @@ const server = createServer(async (req, res) => {
       "-o", join(dlDir, "video.%(ext)s"),
       "--no-playlist",
       "--extractor-args", "youtube:player_client=tv_embedded,ios,android",
-      "--source-address", WARP_SOURCE_IP,
+      "--proxy", WARP_PROXY_URL,
       "--socket-timeout", "30",
       "--no-check-certificate",
       "--retries", "3",
@@ -309,7 +315,7 @@ const server = createServer(async (req, res) => {
     if (write_subs) dlArgs.push("--write-subs", "--write-auto-subs", "--sub-langs", "en", "--sub-format", "vtt");
     dlArgs.push(dlUrl);
 
-    console.log("[oracle-proxy] /download WARP ip=" + WARP_SOURCE_IP + " " + dlUrl.slice(0, 100));
+    console.log("[oracle-proxy] /download via WARP proxy " + WARP_PROXY_URL + " " + dlUrl.slice(0, 100));
     try {
       await new Promise((resolve, reject) => {
         const proc = spawn("yt-dlp", dlArgs, { timeout: 120000 });
@@ -409,10 +415,12 @@ const server = createServer(async (req, res) => {
     if (!hasPreSearched && !channels.length) return send(res, 400, { error: "No channels parsed from roster" });
 
     const externalProxy = proxies ? proxies.split(/[,\n]/).map(s => s.trim()).filter(Boolean)[0] : null;
-    // Use Cloudflare WARP source IP so yt-dlp exits via Cloudflare's network (bypasses Oracle IP block).
-    // If an external proxy is provided (e.g. residential), it takes precedence.
-    const sourceAddress = externalProxy ? null : WARP_SOURCE_IP;
-    console.log(`[oracle-proxy] exit via: ${externalProxy ? `proxy ${externalProxy.slice(0, 50)}` : `WARP ${WARP_SOURCE_IP}`}`);
+    // Route through the external proxy if one is provided (e.g. residential);
+    // otherwise fall back to the local Cloudflare WARP SOCKS5 proxy so yt-dlp
+    // exits via Cloudflare's network instead of this box's own (often
+    // blocked) datacenter IP.
+    const resolvedProxy = externalProxy || WARP_PROXY_URL;
+    console.log(`[oracle-proxy] exit via: ${externalProxy ? `external proxy ${externalProxy.slice(0, 50)}` : `WARP proxy ${WARP_PROXY_URL}`}`);
     if (hasPreSearched) console.log(`[oracle-proxy] download-only mode: received ${preSearchedUrls.length} URL(s) from caller`);
 
     const jobId = randomUUID();
@@ -420,7 +428,7 @@ const server = createServer(async (req, res) => {
     persistJobsImmediate();
     send(res, 200, { ok: true, jobId, status: "running" });
 
-    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, externalProxy, hasPreSearched ? preSearchedUrls : null, sourceAddress).catch(err => {
+    runJob(jobId, channels, Number(minDuration), Number(limit), cookiesB64, resolvedProxy, hasPreSearched ? preSearchedUrls : null).catch(err => {
       jobs[jobId] = { ...jobs[jobId], ok: false, status: "done", error: err.message, count: 0, videos: [] };
       persistJobs();
     });
