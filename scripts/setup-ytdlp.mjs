@@ -30,6 +30,7 @@ const DEFAULT_COOKIES = path.join(CONFIG_DIR, "cookies.txt");
 const cookiesFile =
   process.env.YOUTUBE_COOKIES_FILE ||
   (existsSync(DEFAULT_COOKIES) ? DEFAULT_COOKIES : "");
+const cookiesFileUsable = Boolean(cookiesFile && existsSync(cookiesFile));
 
 const lines = [
   "--no-check-certificate",
@@ -38,17 +39,24 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
-  // ios: iOS app client — does NOT use cookies but bypasses YouTube's bot-check
-  //      from datacenter IPs (uses a different API endpoint). Best first choice
-  //      for public sports highlights from GitHub Actions runners.
-  // web: full browser client — uses cookies + bgutil PO tokens.
-  // mweb: mobile web — uses cookies, good fallback if web is blocked.
-  // android: Android app client — uses cookies, bypasses some rate limits.
-  '--extractor-args "youtube:player_client=ios,web,mweb,android"',
 ];
 
+// ios: iOS app client — does NOT support cookies at all (yt-dlp skips it
+//      outright once --cookies is set), but bypasses YouTube's bot-check
+//      from datacenter IPs without needing an authenticated session.
+// web/mweb/android: use cookies + bgutil PO tokens — the path that actually
+//      needs a real, non-stale cookies file to work.
+// These two strategies are mutually exclusive per yt-dlp invocation (cookies
+// being present silently kills ios), so pick one instead of listing both —
+// listing ios first while also writing --cookies just wastes an attempt.
+if (cookiesFileUsable) {
+  lines.push('--extractor-args "youtube:player_client=web,mweb,android"');
+} else {
+  lines.push('--extractor-args "youtube:player_client=ios"');
+}
+
 if (cookiesFile) {
-  if (!existsSync(cookiesFile)) {
+  if (!cookiesFileUsable) {
     process.stderr.write(`Warning: cookies file not found at ${cookiesFile}\n`);
   } else {
     lines.push(`--cookies ${cookiesFile}`);

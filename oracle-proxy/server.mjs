@@ -141,7 +141,10 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
             "--no-check-certificate", "--no-playlist", "--flat-playlist",
             "--print", "%(webpage_url)s\t%(title)s\t%(duration)s\t%(uploader)s\t%(vcodec)s",
             "--no-warnings",
-            "--extractor-args", "youtube:player_client=ios,android,web",
+            // No "ios" here — it can't use cookies at all (yt-dlp skips it
+            // outright once --cookies is set below), so listing it first
+            // when cookies are available just wastes an attempt.
+            "--extractor-args", "youtube:player_client=web,mweb,android",
           ];
           if (cookiesPath) args.push("--cookies", cookiesPath);
           if (proxyUrl) args.push("--proxy", proxyUrl);
@@ -189,18 +192,29 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       const fileName = `${safeTitle}.mp4`;
       const outPath = join(fileDir, fileName);
 
-      const tryDownload = (useProxy) => new Promise((resolve, reject) => {
+      // useIos: the ios client structurally can't use cookies at all (yt-dlp
+      // skips it outright once --cookies is present) but bypasses YouTube's
+      // datacenter-IP bot-check without needing an authenticated session —
+      // try that first. If it fails, fall back to cookie-authenticated
+      // clients (needs a real, non-stale cookies file to actually help).
+      // proxyUrl (WARP or an external proxy) is applied either way — it's a
+      // separate IP-bypass mechanism, orthogonal to the client/cookie choice.
+      const tryDownload = (useIos) => new Promise((resolve, reject) => {
         const args = [
           "--no-check-certificate",
           "-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best",
           "--merge-output-format", "mp4",
           "-o", outPath,
           "--no-playlist",
-          "--extractor-args", "youtube:player_client=ios,android,web",
           "--retries", "2",
         ];
-        if (cookiesPath) args.push("--cookies", cookiesPath);
-        if (useProxy && proxyUrl) args.push("--proxy", proxyUrl);
+        if (useIos) {
+          args.push("--extractor-args", "youtube:player_client=ios");
+        } else {
+          args.push("--extractor-args", "youtube:player_client=web,mweb,android");
+          if (cookiesPath) args.push("--cookies", cookiesPath);
+        }
+        if (proxyUrl) args.push("--proxy", proxyUrl);
         args.push(video.url);
         const proc = spawn("yt-dlp", args, { timeout: 300000 });
         let stderr = "";
@@ -210,16 +224,11 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       });
 
       try {
-        // Try with proxy first (residential IP avoids geo-blocks), then without
-        if (proxyUrl) {
-          try {
-            await tryDownload(true);
-          } catch (proxyErr) {
-            console.error(`[oracle-proxy] proxy download failed for ${video.title.slice(0, 50)}: ${proxyErr.message.slice(0, 150)}`);
-            console.log(`[oracle-proxy] retrying without proxy...`);
-            await tryDownload(false);
-          }
-        } else {
+        try {
+          await tryDownload(true);
+        } catch (iosErr) {
+          console.error(`[oracle-proxy] ios download failed for ${video.title.slice(0, 50)}: ${iosErr.message.slice(0, 150)}`);
+          console.log(`[oracle-proxy] retrying with cookie-authenticated clients...`);
           await tryDownload(false);
         }
 

@@ -2864,7 +2864,7 @@ async function downloadVideo(sourceUrl, projectId) {
   } catch {
     title = "";
   }
-  await runYtdlpWithRetry([
+  const downloadFormatArgs = [
     "--no-playlist",
     "--force-overwrites",
     "-f",
@@ -2878,8 +2878,32 @@ async function downloadVideo(sourceUrl, projectId) {
     "mp4",
     "-o",
     template,
-    sourceUrl,
-  ], { timeoutMs: 1000 * 60 * 20 });
+  ];
+  try {
+    // First: iOS client, no cookies. The ios client structurally can't use
+    // cookies at all (yt-dlp skips it outright when --cookies is present),
+    // but bypasses YouTube's datacenter-IP bot-check without needing an
+    // authenticated session — this was the original, working default before
+    // cookies were added to the global yt-dlp config for a separate reason.
+    await runYtdlpWithRetry([
+      ...downloadFormatArgs,
+      "--extractor-args", "youtube:player_client=ios",
+      sourceUrl,
+    ], { timeoutMs: 1000 * 60 * 20 });
+  } catch (iosErr) {
+    // Fall back to cookie-authenticated clients (needs the bgutil PO-token
+    // service + Deno's n-challenge solving, both already set up in CI) —
+    // this is the path that needs a real, non-stale cookies file to work.
+    const cookiesFile = process.env.YOUTUBE_COOKIES_FILE || "";
+    const cookieArgs = cookiesFile && fs.existsSync(cookiesFile) ? ["--cookies", cookiesFile] : [];
+    process.stdout.write(`[download] ios client failed (${iosErr.message.slice(0, 150)}), retrying with cookie-authenticated clients...\n`);
+    await runYtdlpWithRetry([
+      ...downloadFormatArgs,
+      "--extractor-args", "youtube:player_client=web,mweb,android",
+      ...cookieArgs,
+      sourceUrl,
+    ], { timeoutMs: 1000 * 60 * 20 });
+  }
 
   const files = await fsp.readdir(UPLOAD_DIR);
   const match = files.find((file) => file.startsWith(`${projectId}-source.`));
