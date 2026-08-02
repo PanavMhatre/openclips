@@ -5972,11 +5972,21 @@ Return ONLY JSON:
   const _sportsCtxModel = groqChatModel();
   const response = await withGroqRetry((client) => client.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
-    ...groqChatParams(_sportsCtxModel, { maxTokens: 300, temperature: 0.12, responseFormat: { type: "json_object" } }),
+    // Was 300 — tight enough that a longer hookAngle/teams response could get
+    // cut off mid-JSON (observed as "Unexpected end of JSON input" downstream).
+    ...groqChatParams(_sportsCtxModel, { maxTokens: 500, temperature: 0.12, responseFormat: { type: "json_object" } }),
   }), { label: "Groq sports context", attempts: 2, keySlot, timeout: 60000 });
 
-  const parsed = JSON.parse(cleanJson(response.choices?.[0]?.message?.content || "{}"));
+  const rawContent = response.choices?.[0]?.message?.content || "";
+  let parsed;
+  try {
+    parsed = JSON.parse(cleanJson(rawContent));
+  } catch (parseErr) {
+    console.error(`[sports-context] JSON parse failed (${parseErr.message}). finish_reason=${response.choices?.[0]?.finish_reason}, raw content (${rawContent.length} chars): ${rawContent.slice(0, 500)}`);
+    throw parseErr;
+  }
   if (!parsed.contextLine && !parsed.hookAngle && !parsed.teams) {
+    console.error(`[sports-context] Empty result. finish_reason=${response.choices?.[0]?.finish_reason}, raw content (${rawContent.length} chars): ${rawContent.slice(0, 500)}`);
     throw new Error("Groq sports context inference returned empty data.");
   }
 
