@@ -21,7 +21,7 @@ on:
       clip_count:
         description: 'Number of clips to post per run'
         type: string
-        default: '5'
+        default: '2'
 
 jobs:
   publish:
@@ -273,8 +273,11 @@ jobs:
 
       - name: Rank top clips
         run: |
+          # 2 clips x 3 scheduled runs/day = 6/day, well under TikTok's ~15-25/day
+          # posting cap (shared across all API clients on the account) — was
+          # 5 x 3 = 15/day before, sitting right at the low end of that range.
           TOP_N="${{ github.event.inputs.clip_count }}"
-          node scripts/rank-openclips-clips.mjs --genre=sports --top="${TOP_N:-5}" --output=/tmp/oc-top8.json
+          node scripts/rank-openclips-clips.mjs --genre=sports --top="${TOP_N:-2}" --output=/tmp/oc-top8.json
           echo "Top clips:"
           cat /tmp/oc-top8.json | node -e "
             const clips=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
