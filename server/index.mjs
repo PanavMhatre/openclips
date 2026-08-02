@@ -2868,7 +2868,12 @@ async function downloadVideo(sourceUrl, projectId) {
     "--no-playlist",
     "--force-overwrites",
     "-f",
-    "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/best[height<=1080]/best",
+    // Matches the proxy's own fetch ceiling (bv*[height<=2160]...) — this
+    // fallback path (local yt-dlp on the GH Actions runner, used only when
+    // the proxy fetch fails entirely) used to cap at 1080p for no reason
+    // tied to the proxy's own limit, quietly capping quality below what the
+    // normal path allows whenever this fallback kicks in.
+    "bv*[ext=mp4][height<=2160]+ba[ext=m4a]/bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=2160]/best",
     "--merge-output-format",
     "mp4",
     "-o",
