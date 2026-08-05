@@ -203,10 +203,13 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       const outPath = join(fileDir, fileName);
 
       // useIos: the ios client structurally can't use cookies at all (yt-dlp
-      // skips it outright once --cookies is present) but bypasses YouTube's
-      // datacenter-IP bot-check without needing an authenticated session —
-      // try that first. If it fails, fall back to cookie-authenticated
-      // clients (needs a real, non-stale cookies file to actually help).
+      // skips it outright once --cookies is present), bypasses YouTube's
+      // datacenter-IP bot-check without an authenticated session, but caps
+      // out at a lower max resolution and can't use a PO token. The
+      // cookie-authenticated web/mweb/android path (paired with the bgutil
+      // PO-token provider) unlocks the higher-res/4K formats, so try that
+      // first for quality when cookies are available; fall back to ios only
+      // if it fails (or immediately if there's no cookies file at all).
       // proxyUrl (WARP or an external proxy) is applied either way — it's a
       // separate IP-bypass mechanism, orthogonal to the client/cookie choice.
       const tryDownload = (useIos) => new Promise((resolve, reject) => {
@@ -234,12 +237,16 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
       });
 
       try {
-        try {
+        if (cookiesPath) {
+          try {
+            await tryDownload(false);
+          } catch (webErr) {
+            console.error(`[oracle-proxy] cookie-authenticated download failed for ${video.title.slice(0, 50)}: ${webErr.message.slice(0, 150)}`);
+            console.log(`[oracle-proxy] retrying with ios client...`);
+            await tryDownload(true);
+          }
+        } else {
           await tryDownload(true);
-        } catch (iosErr) {
-          console.error(`[oracle-proxy] ios download failed for ${video.title.slice(0, 50)}: ${iosErr.message.slice(0, 150)}`);
-          console.log(`[oracle-proxy] retrying with cookie-authenticated clients...`);
-          await tryDownload(false);
         }
 
         const downloadUrl = `${PUBLIC_URL}/files/${jobId}/${encodeURIComponent(fileName)}`;
