@@ -2,8 +2,10 @@ name: Sports Publish
 
 on:
   schedule:
-    # 3 times a day: 6 AM, 2 PM, 10 PM UTC (1 AM / 9 AM / 5 PM CT)
-    - cron: '0 6,14,22 * * *'
+    # 2 times a day: 6 AM, 6 PM UTC (1 AM / 1 PM CT) x 2 clips each = 4/day total.
+    # Fewer, larger runs instead of 3x/day — less proxy load (bandwidth, disk),
+    # still 2 independent chances per day if one run hits a transient issue.
+    - cron: '0 6,18 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
