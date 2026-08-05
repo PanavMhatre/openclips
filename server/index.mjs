@@ -6067,11 +6067,22 @@ ${transcript}`;
 
   const response = await withGroqRetry((client) => client.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
-    ...groqChatParams(groqChatModel(), { maxTokens: 1400, temperature: 0.25, responseFormat: { type: "json_object" } }),
+    // Was 1400 — genuinely too tight for 5-8 full clip objects (title, hook,
+    // score, emotion, reasoning, tags, scoreboard, players each), causing
+    // truncated JSON on content-rich transcripts ("Unexpected end of JSON
+    // input" / "Unterminated string" downstream — this was silently killing
+    // every real video once actual 4K source content started downloading).
+    ...groqChatParams(groqChatModel(), { maxTokens: 3000, temperature: 0.25, responseFormat: { type: "json_object" } }),
   }), { label: "Groq sports clip planning", attempts: 3, keySlot });
 
   const raw = response.choices?.[0]?.message?.content || "";
-  const parsed = JSON.parse(cleanJson(raw));
+  let parsed;
+  try {
+    parsed = JSON.parse(cleanJson(raw));
+  } catch (parseErr) {
+    console.error(`[sports-clips] JSON parse failed (${parseErr.message}). finish_reason=${response.choices?.[0]?.finish_reason}, raw content (${raw.length} chars): ${raw.slice(0, 800)}`);
+    throw parseErr;
+  }
   const clips = Array.isArray(parsed.clips) ? parsed.clips : [];
   const normalized = clips.map((clip, index) => {
     const base = normalizeCandidate(clip, index, duration, analysisChunks);
