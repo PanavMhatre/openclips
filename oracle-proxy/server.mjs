@@ -14,9 +14,9 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { writeFile, readFile, unlink, mkdir, rm, readdir } from "node:fs/promises";
+import { writeFile, readFile, unlink, mkdir, rm, readdir, stat as fsStat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,6 +28,16 @@ const SECRET = process.env.FETCH_SECRET || "";
 // A wrong/stale value silently breaks every downloadUrl this server hands out.
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
 const FILE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+// Downloaded videos MUST live on the real disk, not os.tmpdir(). On this box
+// (and likely any similar small instance) /tmp is tmpfs — a RAM-backed
+// filesystem capped at a few hundred MB, completely separate from and far
+// smaller than the actual root disk. Every single video download was
+// failing with "Disk quota exceeded" despite gigabytes of free disk space,
+// because it was filling up a ~455MB RAM-backed /tmp, not the disk. This is
+// the actual root cause of every "0 videos downloaded" run since this box
+// went live — not YouTube blocking, not cookies, not disk space.
+const VIDEO_STORAGE_DIR = process.env.ORACLE_PROXY_STORAGE_DIR || join(homedir(), "oracle-data");
 
 // Cloudflare WARP client running in "proxy" mode — a local SOCKS5 proxy that
 // only affects traffic explicitly pointed at it (unlike "warp"/full-tunnel
@@ -119,7 +129,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
     await writeFile(cookiesPath, Buffer.from(cookiesB64, "base64").toString("utf8"));
   }
 
-  const fileDir = join(tmpdir(), "oracle-files", jobId);
+  const fileDir = join(VIDEO_STORAGE_DIR, "oracle-files", jobId);
   await mkdir(fileDir, { recursive: true });
 
   try {
@@ -277,7 +287,7 @@ const server = createServer(async (req, res) => {
     if (parts.length >= 2) {
       const jobId = parts[0];
       const fileName = decodeURIComponent(parts[1]);
-      const filePath = join(tmpdir(), "oracle-files", jobId, fileName);
+      const filePath = join(VIDEO_STORAGE_DIR, "oracle-files", jobId, fileName);
       try {
         const stream = createReadStream(filePath);
         res.writeHead(200, { "Content-Type": "video/mp4" });
@@ -308,7 +318,7 @@ const server = createServer(async (req, res) => {
     }
 
     const dlJobId = randomUUID();
-    const dlDir = join(tmpdir(), "oracle-dl", dlJobId);
+    const dlDir = join(VIDEO_STORAGE_DIR, "oracle-dl", dlJobId);
     await mkdir(dlDir, { recursive: true });
 
     const dlArgs = [
@@ -447,8 +457,41 @@ const server = createServer(async (req, res) => {
   send(res, 404, { error: "Not found" });
 });
 
+// The per-job cleanup timer (setTimeout in runJob, above) only fires if this
+// process stays alive for the full FILE_TTL_MS — a restart (deploy, crash,
+// systemd bounce) silently drops it, and that job's files are then never
+// cleaned up. Sweep on every startup, based on actual file age, so cleanup
+// doesn't depend on this process having stayed up continuously.
+async function sweepStaleDownloads() {
+  const cutoff = Date.now() - FILE_TTL_MS;
+  for (const sub of ["oracle-files", "oracle-dl"]) {
+    const dir = join(VIDEO_STORAGE_DIR, sub);
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue; // doesn't exist yet — nothing to sweep
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = join(dir, entry.name);
+      try {
+        const stat = await fsStat(fullPath);
+        if (stat.mtimeMs < cutoff) {
+          await rm(fullPath, { recursive: true, force: true });
+          console.log(`[oracle-proxy] swept stale download dir: ${sub}/${entry.name}`);
+        }
+      } catch {}
+    }
+  }
+}
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[oracle-proxy] listening on port ${PORT}`);
   console.log(`[oracle-proxy] files served at ${PUBLIC_URL}/files/<jobId>/<filename>`);
+  console.log(`[oracle-proxy] video storage: ${VIDEO_STORAGE_DIR}`);
   if (!SECRET) console.warn("[oracle-proxy] WARNING: FETCH_SECRET not set — endpoint is unauthenticated");
+  sweepStaleDownloads().catch((e) => console.error(`[oracle-proxy] startup sweep failed: ${e.message}`));
+  // Also sweep periodically while running, independent of any per-job timer.
+  setInterval(() => sweepStaleDownloads().catch(() => {}), 30 * 60 * 1000);
 });
