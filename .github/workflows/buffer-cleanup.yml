@@ -3,6 +3,13 @@ name: Buffer Cleanup
 on:
   workflow_dispatch:
     inputs:
+      account:
+        description: 'Which Buffer account/secret to use'
+        type: choice
+        options:
+          - podcast
+          - sports
+        default: podcast
       channel_id:
         description: 'Buffer channel ID to clean up (exact match, preferred over channel_name)'
         type: string
@@ -22,7 +29,7 @@ jobs:
     permissions:
       contents: read
     env:
-      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+      BUFFER_API_KEY: ${{ inputs.account == 'sports' && secrets.BUFFER_SPORTS_API_KEY || secrets.BUFFER_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
