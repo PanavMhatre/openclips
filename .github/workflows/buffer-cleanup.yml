@@ -11,6 +11,10 @@ on:
         description: 'Buffer channel name to clean up (used only if channel_id is empty — ambiguous if multiple channels share a name)'
         type: string
         default: ''
+      debug_channels:
+        description: 'If true, just list every organization/channel visible to this token and exit (no changes made)'
+        type: boolean
+        default: false
 
 jobs:
   cleanup:
@@ -30,6 +34,10 @@ jobs:
 
       - name: Delete stuck (error/sending) posts
         run: |
+          if [ "${{ inputs.debug_channels }}" = "true" ]; then
+            node scripts/buffer-schedule.mjs --debug-channels
+            exit 0
+          fi
           ARGS="--cleanup-errors"
           if [ -n "${{ inputs.channel_id }}" ]; then
             ARGS="$ARGS --channel-id=${{ inputs.channel_id }}"

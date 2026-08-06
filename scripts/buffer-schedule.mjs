@@ -71,6 +71,7 @@ function parseArgs(argv) {
     if (arg === "--undo") { args.undo = true; continue; }
     if (arg === "--now") { args.now = true; continue; }
     if (arg === "--cleanup-errors") { args.cleanupErrors = true; continue; }
+    if (arg === "--debug-channels") { args.debugChannels = true; continue; }
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "clips") args.clipsFile = val;
     else if (key === "date") args.date = val;
@@ -431,6 +432,23 @@ async function cleanupErrorPosts({ channelName, channelId }) {
 
 async function main() {
   const args = parseArgs(process.argv);
+
+  // --debug-channels: print every organization + channel visible to this token
+  if (args.debugChannels) {
+    const orgData = await bufferGraphql(`query { account { organizations { id name } } }`);
+    const orgs = orgData?.account?.organizations || [];
+    process.stderr.write(`${orgs.length} organization(s):\n`);
+    for (const org of orgs) {
+      process.stderr.write(`  org ${org.id} (${org.name})\n`);
+      const chData = await bufferGraphql(`
+        query { channels(input: { organizationId: ${graphqlString(org.id)} }) { id service name } }
+      `);
+      for (const ch of chData?.channels || []) {
+        process.stderr.write(`    channel ${ch.id} [${ch.service}] ${ch.name}\n`);
+      }
+    }
+    return;
+  }
 
   // --cleanup-errors: delete stuck error/sending posts for a channel (by id or name)
   if (args.cleanupErrors) {
