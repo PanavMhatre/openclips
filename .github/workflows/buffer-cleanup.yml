@@ -1,0 +1,42 @@
+name: Buffer Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: 'Buffer channel ID to clean up (exact match, preferred over channel_name)'
+        type: string
+        default: ''
+      channel_name:
+        description: 'Buffer channel name to clean up (used only if channel_id is empty — ambiguous if multiple channels share a name)'
+        type: string
+        default: ''
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Delete stuck (error/sending) posts
+        run: |
+          ARGS="--cleanup-errors"
+          if [ -n "${{ inputs.channel_id }}" ]; then
+            ARGS="$ARGS --channel-id=${{ inputs.channel_id }}"
+          elif [ -n "${{ inputs.channel_name }}" ]; then
+            ARGS="$ARGS --channel-name=${{ inputs.channel_name }}"
+          else
+            echo "Provide channel_id or channel_name."
+            exit 1
+          fi
+          node scripts/buffer-schedule.mjs $ARGS

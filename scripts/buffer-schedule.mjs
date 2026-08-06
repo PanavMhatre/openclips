@@ -57,6 +57,9 @@ function parseArgs(argv) {
     dryRun: false,
     undo: false,
     now: false,
+    cleanupErrors: false,
+    channelName: null,
+    channelId: null,
     clipsFile: null,
     date: null,
     timezone: "America/Chicago",
@@ -67,15 +70,18 @@ function parseArgs(argv) {
     if (arg === "--dry-run") { args.dryRun = true; continue; }
     if (arg === "--undo") { args.undo = true; continue; }
     if (arg === "--now") { args.now = true; continue; }
+    if (arg === "--cleanup-errors") { args.cleanupErrors = true; continue; }
     const [key, val] = arg.replace(/^--/, "").split("=");
     if (key === "clips") args.clipsFile = val;
     else if (key === "date") args.date = val;
     else if (key === "timezone") args.timezone = val;
     else if (key === "base-url") args.baseUrl = val;
     else if (key === "output") args.output = val;
+    else if (key === "channel-name") args.channelName = val;
+    else if (key === "channel-id") args.channelId = val;
   }
   // Default to --now when no explicit date is given
-  if (!args.date && !args.undo) args.now = true;
+  if (!args.date && !args.undo && !args.cleanupErrors) args.now = true;
   return args;
 }
 
@@ -376,8 +382,65 @@ async function undoLastSchedule(ledger) {
   return ledger;
 }
 
+/** Delete every stuck post (status error/sending) for a channel matched by exact ID, or by name if no ID given. */
+async function cleanupErrorPosts({ channelName, channelId }) {
+  const orgData = await bufferGraphql(`query { account { organizations { id name } } }`);
+  const orgs = orgData?.account?.organizations || [];
+  let target = null;
+  for (const org of orgs) {
+    const chData = await bufferGraphql(`
+      query { channels(input: { organizationId: ${graphqlString(org.id)} }) { id service name } }
+    `);
+    const channels = chData?.channels || [];
+    const match = channelId
+      ? channels.find((c) => String(c.id) === String(channelId))
+      : channels.find((c) => c.name === channelName);
+    if (match) { target = { org, channel: match }; break; }
+  }
+  if (!target) {
+    process.stderr.write(`No channel matching ${channelId ? `id "${channelId}"` : `name "${channelName}"`} found in any accessible organization.\n`);
+    return;
+  }
+  process.stderr.write(`Found channel "${channelName}" (${target.channel.service}, ${target.channel.id}) in org ${target.org.name}.\n`);
+
+  const postsData = await bufferGraphql(`
+    query {
+      posts(input: { organizationId: ${graphqlString(target.org.id)}, filter: { channelIds: [${graphqlString(target.channel.id)}], status: [error, sending] } }, first: 50) {
+        edges { node { id status dueAt text } }
+      }
+    }
+  `);
+  const stuck = (postsData?.posts?.edges || []).map((e) => e.node);
+  if (!stuck.length) {
+    process.stderr.write("No stuck (error/sending) posts found.\n");
+    return;
+  }
+  process.stderr.write(`Found ${stuck.length} stuck post(s):\n`);
+  for (const post of stuck) {
+    process.stderr.write(`  [${post.status}] ${post.id} (due ${post.dueAt}): ${(post.text || "").slice(0, 60)}\n`);
+  }
+  for (const post of stuck) {
+    try {
+      await deletePost(post.id);
+      process.stderr.write(`  [deleted] ${post.id}\n`);
+    } catch (err) {
+      process.stderr.write(`  [error] ${post.id}: ${err.message}\n`);
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
+
+  // --cleanup-errors: delete stuck error/sending posts for a channel (by id or name)
+  if (args.cleanupErrors) {
+    if (!args.channelId && !args.channelName) {
+      process.stderr.write("Error: --cleanup-errors requires --channel-id=<id> or --channel-name=<name>.\n");
+      process.exit(1);
+    }
+    await cleanupErrorPosts({ channelName: args.channelName, channelId: args.channelId });
+    return;
+  }
 
   // --undo: delete last schedule's Buffer posts and update ledger
   if (args.undo) {
