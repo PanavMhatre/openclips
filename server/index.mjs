@@ -2897,6 +2897,51 @@ async function downloadVideo(sourceUrl, projectId) {
         ...cookieArgs,
         sourceUrl,
       ], { timeoutMs: 1000 * 60 * 20 });
+
+      // YouTube's "SABR-only streaming" rollout intermittently blocks
+      // adaptive formats per-session (yt-dlp issue #12482), silently
+      // cascading the format selector down to a 360p muxed fallback even
+      // though the PO-token path is working and higher formats exist. It's
+      // per-request/session, so a fresh attempt often lands on an unblocked
+      // session — probe the result and retry once if it's suspiciously low.
+      const filesAfterFirst = await fsp.readdir(UPLOAD_DIR);
+      const firstMatch = filesAfterFirst.find((file) => file.startsWith(`${projectId}-source.`));
+      const downloadedPath = firstMatch ? path.join(UPLOAD_DIR, firstMatch) : null;
+      if (downloadedPath) {
+        const { height } = await probeVideo(downloadedPath);
+        if (height > 0 && height < 480) {
+          process.stdout.write(`[download] landed at ${height}p (likely SABR-blocked session), retrying once for better quality...\n`);
+          const retryTemplate = path.join(UPLOAD_DIR, `${projectId}-source-retry.%(ext)s`);
+          try {
+            await runYtdlpWithRetry([
+              "--no-playlist", "--force-overwrites",
+              "-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best",
+              "--merge-output-format", "mp4",
+              "-o", retryTemplate,
+              "--extractor-args", "youtube:player_client=web,mweb,android",
+              ...cookieArgs,
+              sourceUrl,
+            ], { timeoutMs: 1000 * 60 * 20 });
+            const filesAfterRetry = await fsp.readdir(UPLOAD_DIR);
+            const retryMatch = filesAfterRetry.find((file) => file.startsWith(`${projectId}-source-retry.`));
+            const retryPath = retryMatch ? path.join(UPLOAD_DIR, retryMatch) : null;
+            const retryHeight = retryPath ? (await probeVideo(retryPath)).height : 0;
+            if (retryPath && retryHeight > height) {
+              await fsp.unlink(downloadedPath).catch(() => {});
+              await fsp.rename(retryPath, path.join(UPLOAD_DIR, `${projectId}-source${path.extname(retryPath)}`));
+              process.stdout.write(`[download] retry improved quality from ${height}p to ${retryHeight}p\n`);
+            } else {
+              if (retryPath) await fsp.unlink(retryPath).catch(() => {});
+              process.stdout.write(`[download] retry did not improve quality (${retryHeight}p) — keeping original ${height}p\n`);
+            }
+          } catch (retryErr) {
+            const filesAfterFailedRetry = await fsp.readdir(UPLOAD_DIR);
+            const leftoverRetry = filesAfterFailedRetry.find((file) => file.startsWith(`${projectId}-source-retry.`));
+            if (leftoverRetry) await fsp.unlink(path.join(UPLOAD_DIR, leftoverRetry)).catch(() => {});
+            process.stdout.write(`[download] retry attempt failed, keeping original ${height}p: ${retryErr.message.slice(0, 100)}\n`);
+          }
+        }
+      }
     } catch (webErr) {
       process.stdout.write(`[download] cookie-authenticated download failed (${webErr.message.slice(0, 150)}), retrying with ios client...\n`);
       await runYtdlpWithRetry([

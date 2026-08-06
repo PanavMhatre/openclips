@@ -14,7 +14,7 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { writeFile, readFile, unlink, mkdir, rm, readdir, stat as fsStat } from "node:fs/promises";
+import { writeFile, readFile, unlink, rename, mkdir, rm, readdir, stat as fsStat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir, homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -236,10 +236,64 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
         proc.on("error", reject);
       });
 
+      // YouTube's "SABR-only streaming" rollout intermittently blocks adaptive
+      // formats per-session (https://github.com/yt-dlp/yt-dlp/issues/12482),
+      // which silently cascades yt-dlp's format selector all the way down to
+      // the old 360p muxed fallback even though the PO-token path is working
+      // and higher formats are genuinely available. It's per-request/session,
+      // so a fresh attempt often gets an unblocked session. Probe the result
+      // and retry once if it landed suspiciously low, keeping the better file.
+      const probeHeight = (filePath) => new Promise((resolveProbe) => {
+        const proc = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", filePath]);
+        let out = "";
+        proc.stdout.on("data", d => out += d);
+        proc.on("close", () => resolveProbe(parseInt(out.trim(), 10) || 0));
+        proc.on("error", () => resolveProbe(0));
+      });
+      const LOW_RES_THRESHOLD = 480;
+      const retryPath = `${outPath}.retry.mp4`;
+
       try {
         if (cookiesPath) {
           try {
             await tryDownload(false);
+            const height = await probeHeight(outPath);
+            if (height > 0 && height < LOW_RES_THRESHOLD) {
+              console.log(`[oracle-proxy] ${video.title.slice(0, 50)} landed at ${height}p (likely SABR-blocked session), retrying once for better quality...`);
+              try {
+                await new Promise((resolve, reject) => {
+                  const args = [
+                    "--no-check-certificate",
+                    "-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best",
+                    "--merge-output-format", "mp4",
+                    "-o", retryPath,
+                    "--no-playlist",
+                    "--retries", "2",
+                    "--extractor-args", "youtube:player_client=web,mweb,android",
+                    "--cookies", cookiesPath,
+                    ...(proxyUrl ? ["--proxy", proxyUrl] : []),
+                    video.url,
+                  ];
+                  const proc = spawn("yt-dlp", args, { timeout: 300000 });
+                  let stderr = "";
+                  proc.stderr.on("data", d => { stderr += d; process.stderr.write(d); });
+                  proc.on("close", code => code === 0 ? resolve() : reject(new Error(`exit ${code}: ${stderr.slice(-200)}`)));
+                  proc.on("error", reject);
+                });
+                const retryHeight = await probeHeight(retryPath);
+                if (retryHeight > height) {
+                  console.log(`[oracle-proxy] retry improved ${video.title.slice(0, 50)} from ${height}p to ${retryHeight}p`);
+                  await unlink(outPath).catch(() => {});
+                  await rename(retryPath, outPath);
+                } else {
+                  console.log(`[oracle-proxy] retry did not improve ${video.title.slice(0, 50)} (${retryHeight}p) — keeping original ${height}p`);
+                  await unlink(retryPath).catch(() => {});
+                }
+              } catch (retryErr) {
+                console.log(`[oracle-proxy] retry attempt failed for ${video.title.slice(0, 50)}, keeping original ${height}p: ${retryErr.message.slice(0, 100)}`);
+                await unlink(retryPath).catch(() => {});
+              }
+            }
           } catch (webErr) {
             console.error(`[oracle-proxy] cookie-authenticated download failed for ${video.title.slice(0, 50)}: ${webErr.message.slice(0, 150)}`);
             console.log(`[oracle-proxy] retrying with ios client...`);
