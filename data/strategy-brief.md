@@ -1,11 +1,11 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-08-06T10:18:00Z
+Generated: 2026-08-07T08:40:45Z
 
 ## Methodology Diagnostics
 
 ### FM-1 Fresh post contamination
-- IG: 0 excluded | TT: 7 excluded | YT: 7 excluded
+- IG: 0 excluded | TT: 19 excluded | YT: 19 excluded
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
@@ -41,8 +41,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 - **Fed/Economy**: IG #10 (110 avg) vs TikTok #1 (161 avg) — do not cross-post
 - **Tesla/Elon**: IG #1 (233 avg) vs TikTok #7 (13 avg) — do not cross-post
 - **General AI**: IG #2 (215 avg) vs TikTok #6 (33 avg) — do not cross-post
-- **Sports Finance**: IG #7 (122 avg) vs TikTok #3 (58 avg) — do not cross-post
 - **Scaling Laws**: IG #6 (132 avg) vs TikTok #10 (2 avg) — do not cross-post
+- **Sports Finance**: IG #7 (122 avg) vs TikTok #3 (58 avg) — do not cross-post
 
 ---
 
@@ -52,47 +52,47 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | AvgWatch | Flags |
 |---|---|---|---|---|---|---|
-| Tesla/Elon | 31 | 233 | 10.0 | 0.78% | 9.5s | FM6:spike |
-| General AI | 17 | 215 | 8.9 | 1.02% | 11.1s | FM6:spike |
-| NVIDIA/Compute | 43 | 196 | 9.7 | 0.85% | 9.3s | FM6:spike |
-| AI Memory | 1 | 151 | 6.1 | 0.66% | 20.5s | FM7:underpub |
-| Tax/Policy | 3 | 142 | 5.2 | 0.82% | 16.2s | FM7:underpub |
-| Scaling Laws | 1 | 132 | 6.6 | 0.00% | 9.9s | FM7:underpub |
-| Sports Finance | 5 | 122 | 5.0 | 0.80% | 13.4s | — |
-| OpenAI/Pricing | 2 | 122 | 5.2 | 2.05% | 9.5s | FM7:underpub |
-| DeepSeek/China | 1 | 114 | 5.5 | 0.88% | 8.8s | FM7:underpub |
-| Fed/Economy | 1 | 110 | 4.0 | 1.82% | 10.1s | FM7:underpub |
+| Tesla/Elon | 31 | 233 | 9.6 | 0.78% | 9.5s | FM6:spike |
+| General AI | 17 | 215 | 8.6 | 1.02% | 11.1s | FM6:spike |
+| NVIDIA/Compute | 43 | 196 | 9.2 | 0.85% | 9.3s | FM6:spike |
+| AI Memory | 1 | 151 | 5.9 | 0.66% | 20.5s | FM7:underpub |
+| Tax/Policy | 3 | 142 | 5.0 | 0.82% | 16.2s | FM7:underpub |
+| Scaling Laws | 1 | 132 | 6.3 | 0.00% | 9.9s | FM7:underpub |
+| Sports Finance | 5 | 122 | 4.9 | 0.80% | 13.4s | — |
+| OpenAI/Pricing | 2 | 122 | 5.0 | 2.05% | 9.5s | FM7:underpub |
+| DeepSeek/China | 1 | 114 | 5.3 | 0.88% | 8.8s | FM7:underpub |
+| Fed/Economy | 1 | 110 | 3.9 | 1.82% | 10.1s | FM7:underpub |
 
-### TikTok (7 fresh posts excluded)
+### TikTok (19 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Fed/Economy | 1 | 161 | 5.8 | 2.48% | FM7:underpub |
-| Tax/Policy | 3 | 69 | 2.5 | 0.50% | FM6:spike,FM7:underpub |
+| Fed/Economy | 1 | 161 | 5.7 | 2.48% | FM7:underpub |
+| Tax/Policy | 3 | 69 | 2.4 | 0.50% | FM6:spike,FM7:underpub |
 | Sports Finance | 5 | 58 | 2.1 | 1.07% | FM6:spike |
-| AI Memory | 1 | 49 | 2.0 | 2.04% | FM7:underpub |
-| NVIDIA/Compute | 43 | 47 | 2.4 | 0.33% | FM6:spike |
+| AI Memory | 1 | 49 | 1.9 | 2.04% | FM7:underpub |
+| NVIDIA/Compute | 43 | 47 | 2.3 | 0.33% | FM6:spike |
 | General AI | 16 | 33 | 1.4 | 0.21% | FM6:spike |
 | Tesla/Elon | 28 | 13 | 0.5 | 0.51% | FM6:spike |
 | DeepSeek/China | 1 | 12 | 0.6 | 0.00% | FM7:underpub |
 | OpenAI/Pricing | 2 | 4 | 0.2 | 0.00% | FM7:underpub |
 | Scaling Laws | 1 | 2 | 0.1 | 0.00% | FM7:underpub |
 
-### YouTube (7 fresh posts excluded)
+### YouTube (19 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 17.1 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 10.6 | 0.00% | — |
-| Startup Finance | 5 | 318 | 6.3 | 0.00% | — |
-| AI Memory | 2 | 252 | 5.9 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1005 | 16.8 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 10.5 | 0.00% | — |
+| Startup Finance | 5 | 318 | 6.2 | 0.00% | — |
+| AI Memory | 2 | 252 | 5.7 | 0.00% | FM7:underpub |
 | Tesla/Elon | 5 | 230 | 4.0 | 0.00% | FM6:spike |
 | General AI | 157 | 178 | 3.2 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 3.5 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 173 | 3.2 | 0.00% | FM6:spike |
-| Fed/Economy | 2 | 173 | 3.9 | 0.00% | FM7:underpub |
+| Fed/Economy | 2 | 173 | 3.8 | 0.00% | FM7:underpub |
 | OpenAI/Pricing | 15 | 50 | 0.9 | 0.00% | FM6:spike |
-| NVIDIA/Compute | 64 | 45 | 1.1 | 0.00% | FM6:spike |
+| NVIDIA/Compute | 64 | 45 | 1.0 | 0.00% | FM6:spike |
 | Scaling Laws | 9 | 21 | 0.5 | 0.00% | FM6:spike |
 | AI Hardware | 1 | 10 | 0.2 | 0.00% | FM7:underpub |
 | DeepSeek/China | 13 | 7 | 0.2 | 0.00% | FM6:spike |
