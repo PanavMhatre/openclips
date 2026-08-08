@@ -441,10 +441,22 @@ async function main() {
     for (const org of orgs) {
       process.stderr.write(`  org ${org.id} (${org.name})\n`);
       const chData = await bufferGraphql(`
-        query { channels(input: { organizationId: ${graphqlString(org.id)} }) { id service name } }
+        query { channels(input: { organizationId: ${graphqlString(org.id)} }) { id service name isDisconnected isLocked isQueuePaused } }
       `);
       for (const ch of chData?.channels || []) {
-        process.stderr.write(`    channel ${ch.id} [${ch.service}] ${ch.name}\n`);
+        process.stderr.write(`    channel ${ch.id} [${ch.service}] ${ch.name} disconnected=${ch.isDisconnected} locked=${ch.isLocked} queuePaused=${ch.isQueuePaused}\n`);
+        if (args.channelId && String(ch.id) === String(args.channelId)) {
+          const postsData = await bufferGraphql(`
+            query {
+              posts(input: { organizationId: ${graphqlString(org.id)}, filter: { channelIds: [${graphqlString(ch.id)}], status: [draft, error, needs_approval, scheduled, sending, sent] } }, first: 20) {
+                edges { node { id status dueAt text } }
+              }
+            }
+          `);
+          for (const { node } of postsData?.posts?.edges || []) {
+            process.stderr.write(`      [${node.status}] ${node.id} (due ${node.dueAt}): ${(node.text || "").slice(0, 50)}\n`);
+          }
+        }
       }
     }
     return;
