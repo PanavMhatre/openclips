@@ -2886,6 +2886,13 @@ async function downloadVideo(sourceUrl, projectId) {
     // this rate where an unthrottled one 403'd every time.
     "--limit-rate",
     "3M",
+    // yt-dlp requires explicit opt-in to fetch its JS-challenge-solver
+    // component (the "n challenge" needed to unlock real formats on
+    // web/mweb/android) — without it every non-ios client silently falls
+    // back to "only images available". Also set globally in the yt-dlp
+    // config (setup-ytdlp.mjs); repeated here for certainty.
+    "--remote-components",
+    "ejs:github",
   ];
   // Cookie-authenticated web/mweb/android (paired with the bgutil PO-token
   // service + Deno's n-challenge solving, both set up in CI) unlocks the
@@ -2927,6 +2934,7 @@ async function downloadVideo(sourceUrl, projectId) {
               "--merge-output-format", "mp4",
               "-o", retryTemplate,
               "--limit-rate", "3M",
+              "--remote-components", "ejs:github",
               "--extractor-args", "youtube:player_client=web,mweb,android",
               ...cookieArgs,
               sourceUrl,

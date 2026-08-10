@@ -228,6 +228,12 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           // download completes cleanly at this rate where an unthrottled one
           // 403'd every time.
           "--limit-rate", "3M",
+          // yt-dlp requires explicit opt-in to fetch its JS-challenge-solver
+          // component (the "n challenge" needed to unlock real formats on
+          // web/mweb/android) — without it every non-ios client silently
+          // falls back to "only images available", surfacing later as a
+          // confusing "Requested format is not available" error.
+          "--remote-components", "ejs:github",
         ];
         if (useIos) {
           args.push("--extractor-args", "youtube:player_client=ios");
@@ -275,6 +281,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
                     "--no-playlist",
                     "--retries", "2",
                     "--limit-rate", "3M",
+                    "--remote-components", "ejs:github",
                     "--extractor-args", "youtube:player_client=web,mweb,android",
                     "--cookies", cookiesPath,
                     ...(proxyUrl ? ["--proxy", proxyUrl] : []),

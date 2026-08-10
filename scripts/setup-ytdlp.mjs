@@ -39,6 +39,13 @@ const lines = [
   "--max-sleep-interval 8",
   "--retries 5",
   "--retry-sleep 15",
+  // yt-dlp now requires explicit opt-in to fetch its JS-challenge-solver
+  // component (the "n challenge" needed to unlock real video/audio formats
+  // on web/mweb/android). Without this, it silently skips the solver and
+  // every non-ios client falls back to "only images are available",
+  // producing a confusing "Requested format is not available" error that
+  // looks like a cookie or bot-check problem but isn't.
+  "--remote-components ejs:github",
 ];
 
 // ios: iOS app client — does NOT support cookies at all (yt-dlp skips it
