@@ -2896,7 +2896,9 @@ async function downloadVideo(sourceUrl, projectId) {
   // bot-check without an authenticated session — keep it as the fallback
   // (or the only option) when cookies aren't available.
   const cookiesFile = process.env.YOUTUBE_COOKIES_FILE || "";
-  const cookieArgs = cookiesFile && fs.existsSync(cookiesFile) ? ["--cookies", cookiesFile] : [];
+  const cookiesFileExists = cookiesFile ? fs.existsSync(cookiesFile) : false;
+  const cookieArgs = cookiesFile && cookiesFileExists ? ["--cookies", cookiesFile] : [];
+  process.stdout.write(`[download] cookiesFile=${JSON.stringify(cookiesFile)} exists=${cookiesFileExists} using cookies=${cookieArgs.length > 0}\n`);
   if (cookieArgs.length) {
     try {
       await runYtdlpWithRetry([
