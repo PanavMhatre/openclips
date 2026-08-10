@@ -194,7 +194,7 @@ jobs:
 
       - name: Start OpenClips server
         run: |
-          node server/index.mjs &
+          node server/index.mjs > /tmp/openclips-server.log 2>&1 &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
           for i in $(seq 1 20); do
             sleep 1
@@ -361,6 +361,12 @@ jobs:
             MODE_ARG="--now"
           fi
           node scripts/buffer-schedule.mjs --clips=/tmp/oc-top8.json $MODE_ARG
+
+      - name: Dump OpenClips server log
+        if: always()
+        run: |
+          echo "=== last 500 lines of server output ==="
+          tail -n 500 /tmp/openclips-server.log || echo "no server log found"
 
       - name: Cleanup old source files
         if: ${{ github.event.inputs.dry_run != 'true' }}
