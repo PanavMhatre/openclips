@@ -2952,7 +2952,7 @@ async function downloadVideo(sourceUrl, projectId) {
         }
       }
     } catch (webErr) {
-      process.stdout.write(`[download] cookie-authenticated download failed (${webErr.message.slice(0, 150)}), retrying with ios client...\n`);
+      process.stdout.write(`[download] cookie-authenticated download failed (${webErr.message.slice(0, 1500)}), retrying with ios client...\n`);
       await runYtdlpWithRetry([
         ...downloadFormatArgs,
         "--extractor-args", "youtube:player_client=ios",
