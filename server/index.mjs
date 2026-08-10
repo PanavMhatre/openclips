@@ -2878,6 +2878,14 @@ async function downloadVideo(sourceUrl, projectId) {
     "mp4",
     "-o",
     template,
+    // Downloading adaptive (bestvideo) formats at full speed through a
+    // shared/proxied exit IP trips a bandwidth-abuse block partway through —
+    // yt-dlp gets a valid 1080p+ URL and starts downloading, then hits
+    // "HTTP Error 403: Forbidden" a few percent in. Capping the rate avoids
+    // tripping it; confirmed a full 1080p60 download completes cleanly at
+    // this rate where an unthrottled one 403'd every time.
+    "--limit-rate",
+    "3M",
   ];
   // Cookie-authenticated web/mweb/android (paired with the bgutil PO-token
   // service + Deno's n-challenge solving, both set up in CI) unlocks the
@@ -2898,19 +2906,17 @@ async function downloadVideo(sourceUrl, projectId) {
         sourceUrl,
       ], { timeoutMs: 1000 * 60 * 20 });
 
-      // YouTube's "SABR-only streaming" rollout intermittently blocks
-      // adaptive formats per-session (yt-dlp issue #12482), silently
-      // cascading the format selector down to a 360p muxed fallback even
-      // though the PO-token path is working and higher formats exist. It's
-      // per-request/session, so a fresh attempt often lands on an unblocked
-      // session — probe the result and retry once if it's suspiciously low.
+      // Belt-and-suspenders: even with --limit-rate above, still probe and
+      // retry once if a download somehow lands low-res (e.g. a video that
+      // genuinely has no higher format, or a transient failure that fell
+      // back to a lower-quality format), keeping whichever result is better.
       const filesAfterFirst = await fsp.readdir(UPLOAD_DIR);
       const firstMatch = filesAfterFirst.find((file) => file.startsWith(`${projectId}-source.`));
       const downloadedPath = firstMatch ? path.join(UPLOAD_DIR, firstMatch) : null;
       if (downloadedPath) {
         const { height } = await probeVideo(downloadedPath);
         if (height > 0 && height < 480) {
-          process.stdout.write(`[download] landed at ${height}p (likely SABR-blocked session), retrying once for better quality...\n`);
+          process.stdout.write(`[download] landed at ${height}p, retrying once for better quality...\n`);
           const retryTemplate = path.join(UPLOAD_DIR, `${projectId}-source-retry.%(ext)s`);
           try {
             await runYtdlpWithRetry([
@@ -2918,6 +2924,7 @@ async function downloadVideo(sourceUrl, projectId) {
               "-f", "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best",
               "--merge-output-format", "mp4",
               "-o", retryTemplate,
+              "--limit-rate", "3M",
               "--extractor-args", "youtube:player_client=web,mweb,android",
               ...cookieArgs,
               sourceUrl,

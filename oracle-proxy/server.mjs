@@ -220,6 +220,14 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
           "-o", outPath,
           "--no-playlist",
           "--retries", "2",
+          // Downloading adaptive (bestvideo) formats at full speed through
+          // WARP's shared exit IP trips a bandwidth-abuse block partway
+          // through — yt-dlp gets a real, valid 1080p+ URL and starts
+          // downloading, then hits "HTTP Error 403: Forbidden" a few percent
+          // in. Capping the rate avoids tripping it; confirmed a full 1080p60
+          // download completes cleanly at this rate where an unthrottled one
+          // 403'd every time.
+          "--limit-rate", "3M",
         ];
         if (useIos) {
           args.push("--extractor-args", "youtube:player_client=ios");
@@ -236,13 +244,10 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
         proc.on("error", reject);
       });
 
-      // YouTube's "SABR-only streaming" rollout intermittently blocks adaptive
-      // formats per-session (https://github.com/yt-dlp/yt-dlp/issues/12482),
-      // which silently cascades yt-dlp's format selector all the way down to
-      // the old 360p muxed fallback even though the PO-token path is working
-      // and higher formats are genuinely available. It's per-request/session,
-      // so a fresh attempt often gets an unblocked session. Probe the result
-      // and retry once if it landed suspiciously low, keeping the better file.
+      // Belt-and-suspenders: even with --limit-rate above, still probe and
+      // retry once if a download somehow lands low-res (e.g. a video that
+      // genuinely has no higher format, or a transient failure that fell
+      // back to a lower-quality format), keeping whichever result is better.
       const probeHeight = (filePath) => new Promise((resolveProbe) => {
         const proc = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", filePath]);
         let out = "";
@@ -269,6 +274,7 @@ async function runJob(jobId, channels, minDuration, limitPerChannel, cookiesB64,
                     "-o", retryPath,
                     "--no-playlist",
                     "--retries", "2",
+                    "--limit-rate", "3M",
                     "--extractor-args", "youtube:player_client=web,mweb,android",
                     "--cookies", cookiesPath,
                     ...(proxyUrl ? ["--proxy", proxyUrl] : []),
