@@ -10,6 +10,15 @@
 //
 // Files are served directly from the VM over HTTP — no GitHub upload needed.
 // Downloaded files are auto-deleted 2 hours after the job completes.
+//
+// Deno requirement: yt-dlp needs a JS runtime on PATH to solve YouTube's
+// n-challenge (required for real, non-thumbnail formats on web/mweb/android).
+// Deno gets installed to ~/.deno/bin, which is NOT on this systemd service's
+// default PATH — symlink it into a directory that is:
+//   sudo ln -sf /home/ubuntu/.deno/bin/deno /usr/local/bin/deno
+// Without this, yt-dlp silently reports "JS runtimes: none" and every
+// non-ios download fails with "Requested format is not available" — easy to
+// misdiagnose as a cookies or PO-token problem, which it isn't.
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
