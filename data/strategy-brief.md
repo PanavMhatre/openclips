@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-08-17T08:25:38Z
+Generated: 2026-08-18T08:15:56Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-08-17T08:25:38Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 5% | TT 15%
+- General AI share: IG 0% | TT 16%
 - Status: PASS
 
 ### FM-3 View velocity (age-corrected)
@@ -32,14 +32,15 @@ Generated: 2026-08-17T08:25:38Z
 
 ## Summary
 
-NVIDIA/Compute content launched in the final week of this analysis window and is averaging 334 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (635 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
+NVIDIA/Compute content launched in the final week of this analysis window and is averaging 234 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (846 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
 
 ---
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
-- **DeepSeek/China**: IG #100 (0 avg) vs TikTok #4 (37 avg) — do not cross-post
-- **Tesla/Elon**: IG #1 (410 avg) vs TikTok #5 (36 avg) — do not cross-post
+- **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (846 avg) — do not cross-post
+- **General AI**: IG #100 (0 avg) vs TikTok #2 (108 avg) — do not cross-post
+- **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (37 avg) — do not cross-post
 
 ---
 
@@ -49,35 +50,33 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | AvgWatch | Flags |
 |---|---|---|---|---|---|---|
-| Tesla/Elon | 4 | 410 | 14.1 | 1.11% | 9.3s | FM6:spike,FM7:underpub |
-| NVIDIA/Compute | 13 | 334 | 11.5 | 0.69% | 10.3s | FM6:spike |
-| General AI | 1 | 122 | 4.1 | 0.82% | 12.3s | FM7:underpub |
-| Sports Finance | 1 | 120 | 4.1 | 0.83% | 8.2s | FM7:underpub |
+| Tesla/Elon | 1 | 1284 | 43.0 | 0.16% | 18.0s | FM7:underpub |
+| NVIDIA/Compute | 9 | 234 | 8.0 | 0.76% | 10.4s | FM6:spike |
 
 ### TikTok (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 4 | 635 | 79.7 | 0.66% | FM7:underpub |
-| General AI | 11 | 99 | 13.7 | 0.68% | FM6:spike |
-| NVIDIA/Compute | 45 | 50 | 3.6 | 0.33% | FM6:spike |
-| DeepSeek/China | 2 | 37 | 3.3 | 0.00% | FM7:underpub |
-| Tesla/Elon | 10 | 36 | 4.5 | 0.15% | FM6:spike |
+| Sports Finance | 3 | 846 | 94.4 | 0.88% | FM7:underpub |
+| General AI | 10 | 108 | 13.2 | 0.75% | FM6:spike |
+| NVIDIA/Compute | 41 | 55 | 3.6 | 0.36% | FM6:spike |
+| Tesla/Elon | 7 | 52 | 5.8 | 0.21% | FM6:spike |
+| DeepSeek/China | 2 | 37 | 3.0 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 14.4 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 8.8 | 0.00% | — |
-| Startup Finance | 5 | 318 | 5.2 | 0.00% | — |
-| AI Memory | 2 | 252 | 4.7 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1005 | 14.2 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 8.7 | 0.00% | — |
+| Startup Finance | 5 | 318 | 5.1 | 0.00% | — |
+| AI Memory | 2 | 252 | 4.6 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 191 | 2.8 | 0.00% | FM6:spike |
-| Sports Finance | 6 | 174 | 2.9 | 0.00% | FM6:spike |
-| Tax/Policy | 5 | 173 | 2.7 | 0.00% | FM6:spike |
-| Fed/Economy | 2 | 173 | 3.1 | 0.00% | FM7:underpub |
-| General AI | 180 | 156 | 2.4 | 0.00% | FM6:spike |
-| OpenAI/Pricing | 18 | 42 | 0.7 | 0.00% | FM6:spike |
+| Sports Finance | 6 | 174 | 2.8 | 0.00% | FM6:spike |
+| Tax/Policy | 5 | 173 | 2.6 | 0.00% | FM6:spike |
+| Fed/Economy | 2 | 173 | 3.0 | 0.00% | FM7:underpub |
+| General AI | 180 | 156 | 2.3 | 0.00% | FM6:spike |
+| OpenAI/Pricing | 18 | 42 | 0.6 | 0.00% | FM6:spike |
 | NVIDIA/Compute | 82 | 36 | 0.7 | 0.00% | FM6:spike |
 | Scaling Laws | 10 | 19 | 0.3 | 0.00% | FM6:spike |
 | AI Hardware | 1 | 10 | 0.2 | 0.00% | FM7:underpub |
@@ -91,16 +90,14 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Hook | Posts | AvgViews | AvgER% | AvgWatch | Best for |
 |---|---|---|---|---|---|
-| How-hook | 1 | 954 | 0.73% | 9.3s | Reach/new audiences |
-| Other-hook | 13 | 316 | 0.87% | 10.2s | Varies |
-| Why-hook | 3 | 304 | 0.47% | 11.0s | ER/comments/shares |
-| The/Number-hook | 2 | 122 | 0.81% | 8.7s | Watch time/saves |
+| Other-hook | 9 | 363 | 0.69% | 11.4s | Varies |
+| The/Number-hook | 1 | 125 | 0.80% | 9.3s | Watch time/saves |
 
 ---
 
 ## Timing
 
-- **Optimal window: 20:00–21:00 UTC** — 448 avg views vs 328 off-peak (1.4× multiplier)
+- **Optimal window: 20:00–21:00 UTC** — 500 avg views vs 339 off-peak (1.5× multiplier)
 - **0% of current posts land in this window** — shift remaining posts into 20:00–21:00 UTC
 - Secondary window: 12:00–13:00 UTC for a mid-day second post
 
@@ -126,8 +123,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Underpublished Opportunities
 
-- **Tesla/Elon**: 4 posts, 410 avg views — test 5–8 more to confirm
-- **Sports Finance**: 4 posts, 635 avg views — test 5–8 more to confirm
+- **Tesla/Elon**: 1 posts, 1284 avg views — test 5–8 more to confirm
+- **Sports Finance**: 3 posts, 846 avg views — test 5–8 more to confirm
 - **DeepSeek/China**: 2 posts, 37 avg views — test 5–8 more to confirm
 - **Crypto (TikTok)**: likely <5 posts — highest TikTok avg. Run 8 posts next 7 days.
 - **AI Memory**: severely underproduced across all platforms; target 3 posts/week.
