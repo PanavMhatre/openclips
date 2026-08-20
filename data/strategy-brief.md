@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-08-19T08:16:53Z
+Generated: 2026-08-20T08:18:34Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-08-19T08:16:53Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 17%
+- General AI share: IG 0% | TT 19%
 - Status: PASS
 
 ### FM-3 View velocity (age-corrected)
@@ -32,15 +32,16 @@ Generated: 2026-08-19T08:16:53Z
 
 ## Summary
 
-NVIDIA/Compute content launched in the final week of this analysis window and is averaging 232 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (847 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
+NVIDIA/Compute content launched in the final week of this analysis window and is averaging 0 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (847 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
 
 ---
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
 - **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (847 avg) — do not cross-post
-- **General AI**: IG #100 (0 avg) vs TikTok #2 (118 avg) — do not cross-post
+- **General AI**: IG #100 (0 avg) vs TikTok #2 (120 avg) — do not cross-post
 - **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (59 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (37 avg) — do not cross-post
 - **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (37 avg) — do not cross-post
 
 ---
@@ -51,30 +52,29 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | AvgWatch | Flags |
 |---|---|---|---|---|---|---|
-| NVIDIA/Compute | 6 | 232 | 7.8 | 0.74% | 8.6s | FM6:spike |
 
 ### TikTok (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 3 | 847 | 84.9 | 0.88% | FM7:underpub |
-| General AI | 10 | 118 | 12.8 | 0.71% | FM6:spike |
-| Tesla/Elon | 6 | 59 | 6.0 | 0.24% | FM6:spike |
-| NVIDIA/Compute | 37 | 52 | 3.4 | 0.36% | FM6:spike |
-| DeepSeek/China | 2 | 37 | 2.8 | 0.00% | FM7:underpub |
+| Sports Finance | 3 | 847 | 77.2 | 0.88% | FM7:underpub,FM5:saturating |
+| General AI | 10 | 120 | 11.8 | 0.71% | FM6:spike |
+| Tesla/Elon | 6 | 59 | 5.4 | 0.24% | FM6:spike |
+| NVIDIA/Compute | 31 | 37 | 3.0 | 0.24% | FM6:spike |
+| DeepSeek/China | 2 | 37 | 2.6 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 14.0 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 8.5 | 0.00% | — |
-| Startup Finance | 5 | 318 | 5.0 | 0.00% | — |
-| AI Memory | 2 | 252 | 4.5 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1005 | 13.8 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 8.4 | 0.00% | — |
+| Startup Finance | 5 | 318 | 4.9 | 0.00% | — |
+| AI Memory | 2 | 252 | 4.4 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 191 | 2.7 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.8 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 173 | 2.6 | 0.00% | FM6:spike |
-| Fed/Economy | 2 | 173 | 3.0 | 0.00% | FM7:underpub |
+| Fed/Economy | 2 | 173 | 2.9 | 0.00% | FM7:underpub |
 | General AI | 180 | 156 | 2.3 | 0.00% | FM6:spike |
 | OpenAI/Pricing | 18 | 42 | 0.6 | 0.00% | FM6:spike |
 | NVIDIA/Compute | 82 | 36 | 0.7 | 0.00% | FM6:spike |
@@ -90,14 +90,12 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Hook | Posts | AvgViews | AvgER% | AvgWatch | Best for |
 |---|---|---|---|---|---|
-| Other-hook | 5 | 253 | 0.73% | 8.4s | Varies |
-| The/Number-hook | 1 | 125 | 0.80% | 9.3s | Watch time/saves |
 
 ---
 
 ## Timing
 
-- **Optimal window: 20:00–21:00 UTC** — 232 avg views vs 232 off-peak (1.0× multiplier)
+- **Optimal window: 20:00–21:00 UTC** — 0 avg views vs 0 off-peak (N/A multiplier)
 - **0% of current posts land in this window** — shift remaining posts into 20:00–21:00 UTC
 - Secondary window: 12:00–13:00 UTC for a mid-day second post
 
