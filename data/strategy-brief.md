@@ -1,15 +1,15 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-08-30T13:19:47Z
+Generated: 2026-08-31T15:30:14Z
 
 ## Methodology Diagnostics
 
 ### FM-1 Fresh post contamination
-- IG: 0 excluded | TT: 12 excluded | YT: 12 excluded
+- IG: 0 excluded | TT: 9 excluded | YT: 9 excluded
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 32%
+- General AI share: IG 0% | TT 31%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -40,7 +40,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 - **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (848 avg) — do not cross-post
 - **General AI**: IG #100 (0 avg) vs TikTok #2 (80 avg) — do not cross-post
-- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (52 avg) — do not cross-post
+- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (61 avg) — do not cross-post
 - **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (38 avg) — do not cross-post
 - **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (38 avg) — do not cross-post
 
@@ -53,29 +53,29 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 | Topic | Posts | AvgViews | VpD | AvgER% | AvgWatch | Flags |
 |---|---|---|---|---|---|---|
 
-### TikTok (12 fresh posts excluded)
+### TikTok (9 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 3 | 848 | 40.0 | 0.88% | FM7:underpub |
-| General AI | 33 | 80 | 12.3 | 0.30% | FM6:spike |
-| Tesla/Elon | 30 | 52 | 6.9 | 4.20% | FM6:spike,FM5:saturating |
-| NVIDIA/Compute | 35 | 38 | 2.1 | 0.44% | FM6:spike,FM5:saturating |
+| Sports Finance | 3 | 848 | 38.0 | 0.88% | FM7:underpub |
+| General AI | 33 | 80 | 9.8 | 0.30% | FM6:spike |
+| Tesla/Elon | 33 | 61 | 10.5 | 3.95% | FM6:spike |
+| NVIDIA/Compute | 35 | 38 | 1.9 | 0.44% | FM6:spike |
 | DeepSeek/China | 2 | 38 | 1.5 | 0.00% | FM7:underpub |
 
-### YouTube (12 fresh posts excluded)
+### YouTube (9 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 12.1 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 7.3 | 0.00% | — |
-| Startup Finance | 5 | 318 | 4.3 | 0.00% | — |
-| AI Memory | 2 | 252 | 3.8 | 0.00% | FM7:underpub |
-| Tesla/Elon | 6 | 192 | 2.4 | 0.00% | FM6:spike |
-| Sports Finance | 6 | 174 | 2.4 | 0.00% | FM6:spike |
+| Personal Finance | 1 | 1005 | 12.0 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 7.2 | 0.00% | — |
+| Startup Finance | 5 | 318 | 4.2 | 0.00% | — |
+| AI Memory | 2 | 252 | 3.7 | 0.00% | FM7:underpub |
+| Tesla/Elon | 6 | 192 | 2.3 | 0.00% | FM6:spike |
+| Sports Finance | 6 | 174 | 2.3 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 2.2 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 2.5 | 0.00% | FM7:underpub |
-| General AI | 230 | 122 | 1.6 | 0.00% | FM6:spike |
+| General AI | 233 | 121 | 1.6 | 0.00% | FM6:spike |
 | OpenAI/Pricing | 18 | 42 | 0.5 | 0.00% | FM6:spike |
 | NVIDIA/Compute | 83 | 35 | 0.5 | 0.00% | FM6:spike |
 | Scaling Laws | 10 | 19 | 0.3 | 0.00% | FM6:spike |
