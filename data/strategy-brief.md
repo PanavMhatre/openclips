@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-01T12:46:42Z
+Generated: 2026-09-02T12:17:41Z
 
 ## Methodology Diagnostics
 
@@ -41,7 +41,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 - **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (848 avg) — do not cross-post
 - **General AI**: IG #100 (0 avg) vs TikTok #2 (70 avg) — do not cross-post
 - **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (68 avg) — do not cross-post
-- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (38 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (39 avg) — do not cross-post
 - **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (38 avg) — do not cross-post
 
 ---
@@ -57,18 +57,18 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 3 | 848 | 36.6 | 0.88% | FM7:underpub |
-| General AI | 40 | 70 | 8.4 | 0.24% | FM6:spike |
-| Tesla/Elon | 35 | 68 | 11.8 | 3.78% | FM6:spike |
-| NVIDIA/Compute | 35 | 38 | 1.8 | 0.44% | FM6:spike |
+| Sports Finance | 3 | 848 | 35.1 | 0.88% | FM7:underpub |
+| General AI | 40 | 70 | 7.2 | 0.24% | FM6:spike |
+| Tesla/Elon | 35 | 68 | 9.6 | 3.78% | FM6:spike |
+| NVIDIA/Compute | 35 | 39 | 1.7 | 0.44% | FM6:spike |
 | DeepSeek/China | 2 | 38 | 1.4 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 11.8 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 7.1 | 0.00% | — |
+| Personal Finance | 1 | 1005 | 11.7 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 7.0 | 0.00% | — |
 | Startup Finance | 5 | 318 | 4.1 | 0.00% | — |
 | AI Memory | 2 | 252 | 3.6 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 2.3 | 0.00% | FM6:spike |
