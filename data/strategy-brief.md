@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-02T12:17:41Z
+Generated: 2026-09-03T12:15:39Z
 
 ## Methodology Diagnostics
 
@@ -57,23 +57,23 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 3 | 848 | 35.1 | 0.88% | FM7:underpub |
-| General AI | 40 | 70 | 7.2 | 0.24% | FM6:spike |
-| Tesla/Elon | 35 | 68 | 9.6 | 3.78% | FM6:spike |
-| NVIDIA/Compute | 35 | 39 | 1.7 | 0.44% | FM6:spike |
-| DeepSeek/China | 2 | 38 | 1.4 | 0.00% | FM7:underpub |
+| Sports Finance | 3 | 848 | 33.7 | 0.88% | FM7:underpub |
+| General AI | 40 | 70 | 6.3 | 0.24% | FM6:spike |
+| Tesla/Elon | 35 | 68 | 8.2 | 3.78% | FM6:spike |
+| NVIDIA/Compute | 35 | 39 | 1.7 | 0.43% | FM6:spike |
+| DeepSeek/China | 2 | 38 | 1.3 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 11.7 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 7.0 | 0.00% | — |
-| Startup Finance | 5 | 318 | 4.1 | 0.00% | — |
-| AI Memory | 2 | 252 | 3.6 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1005 | 11.6 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 6.9 | 0.00% | — |
+| Startup Finance | 5 | 318 | 4.0 | 0.00% | — |
+| AI Memory | 2 | 252 | 3.5 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 2.3 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.3 | 0.00% | FM6:spike |
-| Tax/Policy | 5 | 174 | 2.2 | 0.00% | FM6:spike |
+| Tax/Policy | 5 | 174 | 2.1 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 2.4 | 0.00% | FM7:underpub |
 | General AI | 242 | 117 | 1.5 | 0.00% | FM6:spike |
 | OpenAI/Pricing | 18 | 42 | 0.5 | 0.00% | FM6:spike |
