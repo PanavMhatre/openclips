@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-04T12:16:16Z
+Generated: 2026-09-05T11:23:46Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-04T12:16:16Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 35%
+- General AI share: IG 0% | TT 37%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -32,17 +32,17 @@ Generated: 2026-09-04T12:16:16Z
 
 ## Summary
 
-NVIDIA/Compute content launched in the final week of this analysis window and is averaging 0 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (848 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
+NVIDIA/Compute content launched in the final week of this analysis window and is averaging 0 views/post on Instagram — well above the platform average. On TikTok, the v2 classifier reveals Sports Finance (1213 avg views) and Crypto (0 avg views) as the top performers, categories that were previously buried in unclassified buckets. The #1 growth lever is platform bifurcation: keep the NVIDIA pipeline for Instagram and YouTube; pivot TikTok production to Sports Finance, Crypto, and Fed/Economy.
 
 ---
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
-- **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (848 avg) — do not cross-post
+- **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (1213 avg) — do not cross-post
 - **General AI**: IG #100 (0 avg) vs TikTok #2 (70 avg) — do not cross-post
 - **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (68 avg) — do not cross-post
-- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (39 avg) — do not cross-post
-- **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (38 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (27 avg) — do not cross-post
+- **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (17 avg) — do not cross-post
 
 ---
 
@@ -57,20 +57,20 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 3 | 848 | 32.4 | 0.88% | FM7:underpub |
-| General AI | 40 | 70 | 5.7 | 0.24% | FM6:spike |
-| Tesla/Elon | 35 | 68 | 7.1 | 3.78% | FM6:spike |
-| NVIDIA/Compute | 35 | 39 | 1.6 | 0.43% | FM6:spike |
-| DeepSeek/China | 2 | 38 | 1.3 | 0.00% | FM7:underpub |
+| Sports Finance | 2 | 1213 | 45.0 | 0.89% | FM7:underpub |
+| General AI | 40 | 70 | 5.2 | 0.24% | FM6:spike |
+| Tesla/Elon | 35 | 68 | 6.4 | 3.78% | FM6:spike |
+| NVIDIA/Compute | 30 | 27 | 1.2 | 0.37% | FM6:spike |
+| DeepSeek/China | 1 | 17 | 0.6 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 11.4 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1005 | 11.3 | 0.00% | FM7:underpub |
 | Business/Contrarian | 7 | 558 | 6.8 | 0.00% | — |
-| Startup Finance | 5 | 318 | 4.0 | 0.00% | — |
-| AI Memory | 2 | 252 | 3.5 | 0.00% | FM7:underpub |
+| Startup Finance | 5 | 318 | 3.9 | 0.00% | — |
+| AI Memory | 2 | 252 | 3.4 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 2.2 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.2 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 2.1 | 0.00% | FM6:spike |
@@ -121,8 +121,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Underpublished Opportunities
 
-- **Sports Finance**: 3 posts, 848 avg views — test 5–8 more to confirm
-- **DeepSeek/China**: 2 posts, 38 avg views — test 5–8 more to confirm
+- **Sports Finance**: 2 posts, 1213 avg views — test 5–8 more to confirm
+- **DeepSeek/China**: 1 posts, 17 avg views — test 5–8 more to confirm
 - **Crypto (TikTok)**: likely <5 posts — highest TikTok avg. Run 8 posts next 7 days.
 - **AI Memory**: severely underproduced across all platforms; target 3 posts/week.
 - **DeepMind achievements**: highest ER posts (6%+); schedule 1/week.
