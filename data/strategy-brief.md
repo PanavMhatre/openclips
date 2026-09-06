@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-05T11:23:46Z
+Generated: 2026-09-06T11:45:29Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-05T11:23:46Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 37%
+- General AI share: IG 0% | TT 38%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -39,9 +39,9 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
 - **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (1213 avg) — do not cross-post
-- **General AI**: IG #100 (0 avg) vs TikTok #2 (70 avg) — do not cross-post
+- **General AI**: IG #100 (0 avg) vs TikTok #2 (72 avg) — do not cross-post
 - **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (68 avg) — do not cross-post
-- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (27 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (31 avg) — do not cross-post
 - **DeepSeek/China**: IG #100 (0 avg) vs TikTok #5 (17 avg) — do not cross-post
 
 ---
@@ -57,25 +57,25 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 2 | 1213 | 45.0 | 0.89% | FM7:underpub |
-| General AI | 40 | 70 | 5.2 | 0.24% | FM6:spike |
-| Tesla/Elon | 35 | 68 | 6.4 | 3.78% | FM6:spike |
-| NVIDIA/Compute | 30 | 27 | 1.2 | 0.37% | FM6:spike |
+| Sports Finance | 2 | 1213 | 43.3 | 0.89% | FM7:underpub |
+| General AI | 39 | 72 | 4.9 | 0.25% | FM6:spike |
+| Tesla/Elon | 35 | 68 | 5.7 | 3.78% | FM6:spike |
+| NVIDIA/Compute | 25 | 31 | 1.3 | 0.44% | FM6:spike |
 | DeepSeek/China | 1 | 17 | 0.6 | 0.00% | FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 11.3 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 6.8 | 0.00% | — |
+| Personal Finance | 1 | 1005 | 11.2 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 6.7 | 0.00% | — |
 | Startup Finance | 5 | 318 | 3.9 | 0.00% | — |
 | AI Memory | 2 | 252 | 3.4 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 2.2 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.2 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 2.1 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 2.3 | 0.00% | FM7:underpub |
-| General AI | 242 | 117 | 1.4 | 0.00% | FM6:spike,FM5:saturating |
+| General AI | 242 | 117 | 1.4 | 0.00% | FM6:spike |
 | OpenAI/Pricing | 18 | 42 | 0.5 | 0.00% | FM6:spike |
 | NVIDIA/Compute | 83 | 35 | 0.5 | 0.00% | FM6:spike |
 | Scaling Laws | 10 | 19 | 0.3 | 0.00% | FM6:spike |
