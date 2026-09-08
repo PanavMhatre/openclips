@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-07T13:41:39Z
+Generated: 2026-09-08T12:17:43Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-07T13:41:39Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 40%
+- General AI share: IG 0% | TT 43%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -40,8 +40,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 - **Sports Finance**: IG #100 (0 avg) vs TikTok #1 (1213 avg) — do not cross-post
 - **General AI**: IG #100 (0 avg) vs TikTok #2 (80 avg) — do not cross-post
-- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (70 avg) — do not cross-post
-- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (46 avg) — do not cross-post
+- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #3 (77 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #4 (52 avg) — do not cross-post
 
 ---
 
@@ -56,20 +56,20 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Sports Finance | 2 | 1213 | 41.7 | 0.89% | FM7:underpub |
-| General AI | 35 | 80 | 5.0 | 0.28% | FM6:spike |
-| Tesla/Elon | 34 | 70 | 5.4 | 3.89% | FM6:spike |
-| NVIDIA/Compute | 16 | 46 | 1.9 | 0.69% | FM6:spike |
+| Sports Finance | 2 | 1213 | 40.4 | 0.89% | FM7:underpub |
+| General AI | 35 | 80 | 4.7 | 0.28% | FM6:spike |
+| Tesla/Elon | 31 | 77 | 5.4 | 4.26% | FM6:spike |
+| NVIDIA/Compute | 14 | 52 | 2.0 | 0.76% | FM6:spike |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1005 | 11.0 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 558 | 6.6 | 0.00% | — |
+| Personal Finance | 1 | 1005 | 10.9 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 558 | 6.5 | 0.00% | — |
 | Startup Finance | 5 | 318 | 3.8 | 0.00% | — |
-| AI Memory | 2 | 252 | 3.4 | 0.00% | FM7:underpub |
-| Tesla/Elon | 6 | 192 | 2.2 | 0.00% | FM6:spike |
+| AI Memory | 2 | 252 | 3.3 | 0.00% | FM7:underpub |
+| Tesla/Elon | 6 | 192 | 2.1 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.1 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 2.0 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 2.2 | 0.00% | FM7:underpub |
