@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-09T12:29:30Z
+Generated: 2026-09-10T12:22:59Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-09T12:29:30Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 49%
+- General AI share: IG 0% | TT 48%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -38,9 +38,9 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
-- **General AI**: IG #100 (0 avg) vs TikTok #1 (70 avg) — do not cross-post
-- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #2 (70 avg) — do not cross-post
-- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #3 (24 avg) — do not cross-post
+- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #1 (70 avg) — do not cross-post
+- **General AI**: IG #100 (0 avg) vs TikTok #2 (53 avg) — do not cross-post
+- **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #3 (40 avg) — do not cross-post
 
 ---
 
@@ -55,23 +55,23 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| General AI | 34 | 70 | 4.1 | 0.24% | FM6:spike |
-| Tesla/Elon | 29 | 70 | 5.0 | 4.51% | FM6:spike,FM5:saturating |
-| NVIDIA/Compute | 7 | 24 | 1.3 | 1.01% | FM6:spike |
+| Tesla/Elon | 29 | 70 | 4.7 | 4.51% | FM6:spike,FM5:saturating |
+| General AI | 30 | 53 | 3.5 | 0.08% | FM6:spike |
+| NVIDIA/Compute | 4 | 40 | 2.1 | 1.76% | FM6:spike,FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1006 | 10.8 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1006 | 10.7 | 0.00% | FM7:underpub |
 | Business/Contrarian | 7 | 558 | 6.4 | 0.00% | — |
-| Startup Finance | 5 | 318 | 3.8 | 0.00% | — |
-| AI Memory | 2 | 252 | 3.3 | 0.00% | FM7:underpub |
+| Startup Finance | 5 | 318 | 3.7 | 0.00% | — |
+| AI Memory | 2 | 252 | 3.2 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 2.1 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 2.1 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 2.0 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 2.2 | 0.00% | FM7:underpub |
-| General AI | 242 | 117 | 1.3 | 0.00% | FM6:spike |
+| General AI | 242 | 117 | 1.3 | 0.00% | FM6:spike,FM5:saturating |
 | OpenAI/Pricing | 18 | 42 | 0.5 | 0.00% | FM6:spike |
 | NVIDIA/Compute | 83 | 35 | 0.5 | 0.00% | FM6:spike |
 | Scaling Laws | 10 | 19 | 0.2 | 0.00% | FM6:spike |
@@ -117,7 +117,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Underpublished Opportunities
 
-- All high-volume opportunities covered above.
+- **NVIDIA/Compute**: 4 posts, 40 avg views — test 5–8 more to confirm
 - **Crypto (TikTok)**: likely <5 posts — highest TikTok avg. Run 8 posts next 7 days.
 - **AI Memory**: severely underproduced across all platforms; target 3 posts/week.
 - **DeepMind achievements**: highest ER posts (6%+); schedule 1/week.
