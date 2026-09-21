@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-20T12:38:10Z
+Generated: 2026-09-21T14:33:29Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-20T12:38:10Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 48%
+- General AI share: IG 0% | TT 50%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -38,7 +38,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
-- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #1 (70 avg) — do not cross-post
+- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #1 (59 avg) — do not cross-post
 - **General AI**: IG #100 (0 avg) vs TikTok #2 (54 avg) — do not cross-post
 - **NVIDIA/Compute**: IG #100 (0 avg) vs TikTok #3 (40 avg) — do not cross-post
 
@@ -55,21 +55,21 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Tesla/Elon | 29 | 70 | 2.8 | 4.51% | FM6:spike |
-| General AI | 30 | 54 | 2.1 | 0.08% | FM6:spike |
+| Tesla/Elon | 26 | 59 | 2.3 | 5.00% | FM6:spike |
+| General AI | 30 | 54 | 2.0 | 0.08% | FM6:spike |
 | NVIDIA/Compute | 4 | 40 | 1.4 | 1.56% | FM6:spike,FM7:underpub |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1007 | 9.7 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1007 | 9.6 | 0.00% | FM7:underpub |
 | Business/Contrarian | 7 | 559 | 5.7 | 0.00% | — |
 | Startup Finance | 5 | 318 | 3.3 | 0.00% | — |
-| AI Memory | 2 | 252 | 2.9 | 0.00% | FM7:underpub |
+| AI Memory | 2 | 252 | 2.8 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 192 | 1.9 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 1.8 | 0.00% | FM6:spike |
-| Tax/Policy | 5 | 174 | 1.8 | 0.00% | FM6:spike |
+| Tax/Policy | 5 | 174 | 1.7 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 1.9 | 0.00% | FM7:underpub |
 | General AI | 242 | 117 | 1.2 | 0.00% | FM6:spike |
 | OpenAI/Pricing | 18 | 42 | 0.4 | 0.00% | FM6:spike |
