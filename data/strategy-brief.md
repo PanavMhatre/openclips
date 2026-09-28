@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-09-27T13:19:29Z
+Generated: 2026-09-28T16:01:50Z
 
 ## Methodology Diagnostics
 
@@ -9,7 +9,7 @@ Generated: 2026-09-27T13:19:29Z
 - Status: **APPLIED** — all averages use only posts ≥48h old
 
 ### FM-2 Coarse topic buckets
-- General AI share: IG 0% | TT 58%
+- General AI share: IG 0% | TT 78%
 - Status: **TRIGGERED — v2 classifier applied (17 buckets)**
 
 ### FM-3 View velocity (age-corrected)
@@ -38,8 +38,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Platform Divergence Alert — Do NOT Cross-Post These
 
-- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #1 (167 avg) — do not cross-post
-- **General AI**: IG #100 (0 avg) vs TikTok #2 (24 avg) — do not cross-post
+- **Tesla/Elon**: IG #100 (0 avg) vs TikTok #1 (182 avg) — do not cross-post
+- **General AI**: IG #100 (0 avg) vs TikTok #2 (25 avg) — do not cross-post
 
 ---
 
@@ -54,18 +54,18 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Tesla/Elon | 5 | 167 | 5.7 | 1.27% | — |
-| General AI | 7 | 24 | 0.8 | 0.00% | FM6:spike |
+| Tesla/Elon | 2 | 182 | 6.1 | 0.95% | FM7:underpub |
+| General AI | 7 | 25 | 0.8 | 0.00% | FM6:spike |
 
 ### YouTube (0 fresh posts excluded)
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1007 | 9.1 | 0.00% | FM7:underpub |
+| Personal Finance | 1 | 1007 | 9.0 | 0.00% | FM7:underpub |
 | Business/Contrarian | 7 | 559 | 5.3 | 0.00% | — |
 | Startup Finance | 5 | 318 | 3.1 | 0.00% | — |
-| AI Memory | 2 | 252 | 2.7 | 0.00% | FM7:underpub |
-| Tesla/Elon | 6 | 192 | 1.8 | 0.00% | FM6:spike |
+| AI Memory | 2 | 252 | 2.6 | 0.00% | FM7:underpub |
+| Tesla/Elon | 6 | 192 | 1.7 | 0.00% | FM6:spike |
 | Sports Finance | 6 | 174 | 1.7 | 0.00% | FM6:spike |
 | Tax/Policy | 5 | 174 | 1.6 | 0.00% | FM6:spike |
 | Fed/Economy | 2 | 173 | 1.8 | 0.00% | FM7:underpub |
@@ -115,7 +115,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 ## Underpublished Opportunities
 
-- All high-volume opportunities covered above.
+- **Tesla/Elon**: 2 posts, 182 avg views — test 5–8 more to confirm
 - **Crypto (TikTok)**: likely <5 posts — highest TikTok avg. Run 8 posts next 7 days.
 - **AI Memory**: severely underproduced across all platforms; target 3 posts/week.
 - **DeepMind achievements**: highest ER posts (6%+); schedule 1/week.
