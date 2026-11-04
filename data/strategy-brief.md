@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-11-03T15:28:57Z
+Generated: 2026-11-04T15:47:23Z
 
 ## Methodology Diagnostics
 
