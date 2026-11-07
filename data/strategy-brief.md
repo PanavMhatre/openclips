@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-11-06T15:24:11Z
+Generated: 2026-11-07T14:22:27Z
 
 ## Methodology Diagnostics
 
@@ -58,8 +58,8 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 
 | Topic | Posts | AvgViews | VpD | AvgER% | Flags |
 |---|---|---|---|---|---|
-| Personal Finance | 1 | 1007 | 6.7 | 0.00% | FM7:underpub |
-| Business/Contrarian | 7 | 560 | 3.9 | 0.00% | — |
+| Personal Finance | 1 | 1007 | 6.6 | 0.00% | FM7:underpub |
+| Business/Contrarian | 7 | 560 | 3.8 | 0.00% | — |
 | Startup Finance | 5 | 318 | 2.2 | 0.00% | — |
 | AI Memory | 2 | 254 | 1.9 | 0.00% | FM7:underpub |
 | Tesla/Elon | 6 | 194 | 1.3 | 0.00% | FM6:spike |
