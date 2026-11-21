@@ -1,6 +1,6 @@
 # OpenClips Strategy Brief
 
-Generated: 2026-11-20T16:24:28Z
+Generated: 2026-11-21T15:39:01Z
 
 ## Methodology Diagnostics
 
@@ -71,7 +71,7 @@ NVIDIA/Compute content launched in the final week of this analysis window and is
 | NVIDIA/Compute | 83 | 36 | 0.2 | 0.00% | FM6:spike |
 | Scaling Laws | 10 | 20 | 0.1 | 0.00% | FM6:spike |
 | AI Hardware | 1 | 10 | 0.1 | 0.00% | FM7:underpub |
-| DeepSeek/China | 17 | 7 | 0.1 | 0.00% | FM6:spike |
+| DeepSeek/China | 17 | 8 | 0.1 | 0.00% | FM6:spike |
 | DeepMind | 2 | 4 | 0.0 | 0.00% | FM7:underpub |
 | Health/Diet | 3 | 2 | 0.0 | 0.00% | FM7:underpub |
 
